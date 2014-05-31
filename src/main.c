@@ -23,6 +23,7 @@
 
 #include <stdio.h>
 
+#include "hsadctest.h"
 #include "meas.h"
 
 
@@ -117,8 +118,6 @@ typedef struct {                            /*!< (@ 0x400F0000) VADC Structure  
 #define CGU_BASE_VADC CGU_BASE_ENET_CSR
 #define VADC_IRQn RESERVED7_IRQn
 
-
-
 int32_t capture_count;
 
 #define CAPTUREBUFFER		((uint8_t*)0x20000000)
@@ -129,155 +128,6 @@ int32_t capture_count;
 
 
 // TODO: insert other definitions and declarations here
-/*! Frequency of external xtal */
-#define XTAL_FREQ  (12000000UL)
-
-void setup_systemclock() {
-	/* enable the crystal oscillator */
-	CGU_SetXTALOSC(XTAL_FREQ);
-	CGU_EnableEntity(CGU_CLKSRC_XTAL_OSC, ENABLE);
-
-	/* connect the cpu to the xtal */
-	CGU_EntityConnect(CGU_CLKSRC_XTAL_OSC, CGU_BASE_M4);
-
-	/* connect the PLL to the xtal */
-	CGU_EntityConnect(CGU_CLKSRC_XTAL_OSC, CGU_CLKSRC_PLL1);
-
-	/* configure the PLL to 120 MHz */
-	CGU_SetPLL1(10);
-	while((LPC_CGU->PLL1_STAT&1) == 0x0);
-
-	/* enable the PLL */
-	CGU_EnableEntity(CGU_CLKSRC_PLL1, ENABLE);
-
-	/* connect to the CPU core */
-	CGU_EntityConnect(CGU_CLKSRC_PLL1, CGU_BASE_M4);
-
-	SystemCoreClock = 120000000;
-
-	/* wait one msec */
-	emc_WaitUS(1000);
-
-	/* Change the clock to 204 MHz */
-	CGU_SetPLL1(17);
-	while((LPC_CGU->PLL1_STAT&1) == 0x0);
-
-	SystemCoreClock = 204000000;
-}
-
-#define PLL0_MSEL_MAX (1<<15)
-#define PLL0_NSEL_MAX (1<<8)
-#define PLL0_PSEL_MAX (1<<5)
-
-static uint32_t FindMDEC(uint32_t msel)
-{
-  /* multiplier: compute mdec from msel */
-  uint32_t x = 0x4000;
-  uint32_t im;
-
-  switch (msel)
-  {
-    case 0:
-      return 0xffffffff;
-    case 1:
-      return 0x18003;
-    case 2:
-      return 0x10003;
-    default:
-      for (im = msel; im <= PLL0_MSEL_MAX; im++)
-      {
-        x = ((x ^ x>>1) & 1) << 14 | x>>1 & 0xFFFF;
-      }
-      return x;
-  }
-}
-
-static uint32_t FindNDEC(uint32_t nsel)
-{
-  /* pre-divider: compute ndec from nsel */
-  uint32_t x = 0x80;
-  uint32_t in;
-
-  switch (nsel)
-  {
-    case 0:
-      return 0xffffffff;
-    case 1:
-      return 0x302;
-    case 2:
-      return 0x202;
-    default:
-      for (in = nsel; in <= PLL0_NSEL_MAX; in++)
-      {
-        x = ((x ^ x>>2 ^ x>>3 ^ x>>4) & 1) << 7 | x>>1 & 0xFF;
-      }
-      return x;
-  }
-}
-
-static uint32_t FindPDEC(uint32_t psel)
-{
-  /* post-divider: compute pdec from psel */
-  uint32_t x = 0x10;
-  uint32_t ip;
-
-  switch (psel)
-  {
-    case 0:
-      return 0xffffffff;
-    case 1:
-      return 0x62;
-    case 2:
-      return 0x42;
-    default:
-      for (ip = psel; ip <= PLL0_PSEL_MAX; ip++)
-      {
-        x = ((x ^ x>>2) & 1) << 4 | x>>1 & 0x3F;
-      }
-      return x;
-  }
-}
-
-extern uint32_t CGU_ClockSourceFrequency[CGU_CLKSRC_NUM];
-
-void setup_pll0audio(uint32_t msel, uint32_t nsel, uint32_t psel)
-{
-  uint32_t ClkSrc;
-
-  CGU_EnableEntity(CGU_BASE_PERIPH, DISABLE);
-  CGU_EnableEntity(CGU_BASE_VADC, DISABLE);
-
-  /* disable clock, disable skew enable, power down pll,
-  * (dis/en)able post divider, (dis/en)able pre-divider,
-  * disable free running mode, disable bandsel,
-  * enable up limmiter, disable bypass
-  */
-  LPC_CGU->PLL0AUDIO_CTRL = (6 << 24)   /* source = XTAL OSC 12 MHz */
-                            | _BIT(0);  /* power down */
-
-  /* set NDEC, PDEC and MDEC register */
-  LPC_CGU->PLL0AUDIO_NP_DIV = (FindNDEC(nsel)<<12) | (FindPDEC(psel) << 0);
-  LPC_CGU->PLL0AUDIO_MDIV = FindMDEC(msel);
-
-  LPC_CGU->PLL0AUDIO_CTRL = (6 << 24)   /* source = XTAL OSC 12 MHz */
-                            | (6<< 12);     // fractional divider off and bypassed
-
-  /* wait for lock */
-  while (!(LPC_CGU->PLL0AUDIO_STAT & 1));
-
-  /* enable clock output */
-  LPC_CGU->PLL0AUDIO_CTRL |= (1<<4); /* CLKEN */
-
-  ClkSrc = (LPC_CGU->PLL0AUDIO_CTRL & CGU_CTRL_SRC_MASK)>>24;
-  CGU_ClockSourceFrequency[CGU_CLKSRC_PLL0_AUDIO] =
-    (msel * CGU_ClockSourceFrequency[ClkSrc] ) / (psel * nsel);
-
-  CGU_UpdateClock();
-
-  // Re-enable the clocks that uses PLL0AUDIO
-  CGU_EnableEntity(CGU_BASE_PERIPH, ENABLE);
-  CGU_EnableEntity(CGU_BASE_VADC, ENABLE);
-}
 
 
 void DMA_IRQHandler (void)
@@ -302,13 +152,6 @@ void DMA_IRQHandler (void)
     	MEMCPY(DESTBUFFER + length, CAPTUREBUFFER + length, length);
     CLR_MEAS_PIN_3();
     capture_count ++;
-
-//    LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
-//    LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
-    //LPC_VADC->CLR_STAT1 = STATUS1_CLEAR_MASK;  // clear interrupt status
-    //LPC_VADC->SET_EN1 = Interrupt1Mask;
-    //circbuff.empty = FALSE;
-    //circbuff_fillcount++;
   }
 }
 
@@ -357,7 +200,6 @@ static void VADC_SetupDMA(void)
 
   // Let the last LLI in the chain cause a terminal count interrupt to
   // notify when the capture buffer is completely filled
-  //DMA_Stuff[DMA_NUM_LLI_TO_USE/2 - 1].Control |= (0x1UL << 31); // Terminal count interrupt enabled
   DMA_Stuff[DMA_NUM_LLI_TO_USE/2 - 1].Control |= (0x1UL << 31); // Terminal count interrupt enabled
   DMA_Stuff[DMA_NUM_LLI_TO_USE - 1].Control |= (0x1UL << 31); // Terminal count interrupt enabled
 
@@ -379,11 +221,7 @@ static void VADC_SetupDMA(void)
 
 static void VADC_Init(void)
 {
-  //CGU_EntityConnect(CGU_CLKSRC_PLL0_AUDIO, CGU_BASE_PERIPH);
-  //CGU_EntityConnect(CGU_CLKSRC_PLL1, CGU_BASE_PERIPH);
-  //CGU_EnableEntity(CGU_BASE_PERIPH, ENABLE);
   CGU_EntityConnect(CGU_CLKSRC_PLL0_AUDIO, CGU_BASE_VADC);
-  //CGU_EntityConnect(CGU_CLKSRC_XTAL_OSC, CGU_BASE_VADC);
   CGU_EnableEntity(CGU_BASE_VADC, ENABLE);
 
   // Reset the VADC block
@@ -489,6 +327,7 @@ static void VADC_Init(void)
 
 static void VADC_Start(void)
 {
+	capture_count = 0;
 	LPC_VADC->TRIGGER = 1;
 }
 
@@ -506,18 +345,10 @@ static void VADC_Stop(void)
   // Clear FIFO
   LPC_VADC->FLUSH = 1;
 
-  // Disable the VADC interrupt
-  LPC_VADC->CLR_EN0 = STATUS0_CLEAR_MASK;         // disable interrupt0
-  LPC_VADC->CLR_STAT0 = STATUS0_CLEAR_MASK;       // clear interrupt status
-//  while(LPC_VADC->STATUS0 & 0x7d);  // wait for status to clear, have to exclude FIFO_EMPTY (bit 1)
-  LPC_VADC->CLR_EN1 = STATUS1_CLEAR_MASK;          // disable interrupt1
-  LPC_VADC->CLR_STAT1 = STATUS1_CLEAR_MASK;  // clear interrupt status
-//  while(LPC_VADC->STATUS1);         // wait for status to clear
-
   // Reset the VADC block
   RGU_SoftReset(RGU_SIG_VADC);
   while(RGU_GetSignalStatus(RGU_SIG_VADC));
-*/
+  */
 }
 
 static void priorityConfig()
@@ -546,13 +377,8 @@ int main(void) {
 
 	VADC_Init();
 	VADC_Start();
-    // Force the counter to be placed into memory
     //volatile static int i = 0 ;
-    //for (i = 0; i < 2000; i++)
-    //	;
-	//VADC_Stop();
 
-    // Enter an infinite loop, just incrementing a counter
     while(1) {
         //i++ ;
         if ((capture_count / 1024) % 2)
@@ -562,5 +388,6 @@ int main(void) {
         //if ((i & 0x1fffff) == 0x100000)
         //	printf("%d\n", i);
     }
+	VADC_Stop();
     return 0 ;
 }
