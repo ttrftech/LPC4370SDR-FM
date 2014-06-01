@@ -43,7 +43,9 @@ static GPDMA_LLI_Type DMA_Stuff[DMA_NUM_LLI_TO_USE];
 #define PLL0_MSEL	400
 #define PLL0_NSEL	15
 #define PLL0_PSEL	8
-#define ADCCLK_MATCHVALUE	(8 - 1)  // 80MHz / 4 = 20MHz
+//#define ADCCLK_MATCHVALUE	(2 - 1)  // 80MHz / 4 = 20MHz
+#define ADCCLK_MATCHVALUE	(8 - 1)  // 40MHz / 8 = 5MHz
+//#define ADCCLK_MATCHVALUE	(4 - 1)  // 40MHz / 8 = 5MHz
 #define ADCCLK_DGECI 0
 
 #define SETTINGS_GPIO_IN    (PUP_DISABLE | PDN_DISABLE | SLEWRATE_SLOW | INBUF_ENABLE  | FILTER_ENABLE)
@@ -146,7 +148,6 @@ static void ConfigureNCOTable(int freq)
 	int16_t *tbl = (int16_t*)NCO_BUFFER;
 	for (i = 0; i < NCO_SAMPLES; i++) {
 		tbl[i] = (int16_t)(arm_cos_f32(2*PI*freq*(i+0.5)/NCO_CYCLE) * SHRT_MAX / 16);
-		//tbl[i] = 1;
 	}
 }
 
@@ -187,70 +188,6 @@ static void cic_decimate(CICState *cic, uint8_t *buf, int len)
 				x = __SSUB16(x, offset);
 				f = nco_base[j++];
 				s0 = __SMLAD(x, f, s0);
-				s1 += s0;
-				s2 += s1;
-				/*d00 = d0[k] - s2;
-				d0[k] = s2;
-				d11 = d1[k] - d00;
-				d1[k] = d00;
-				d22 = d2[k] - d11;
-				d2[k] = d11;*/
-			}
-			e0 = d0 - s2;
-			d0 = s2;
-			e1 = d1 - e0;
-			d1 = e0;
-			e2 = d2 - e1;
-			d2 = e1;
-			result[l++] = e2 >> 16;
-			l %=  DEST_BUFFER_SIZE/2;
-		}
-	}
-	cic->dest = l;
-	cic->s0 = s0;
-	cic->s1 = s1;
-	cic->s2 = s2;
-	cic->d0 = d0;
-	cic->d1 = d1;
-	cic->d2 = d2;
-}
-
-typedef struct {
-	int64_t s0;
-	int64_t s1;
-	int64_t s2;
-	int64_t d0;
-	int64_t d1;
-	int64_t d2;
-	int32_t dest;
-} CICState64;
-
-static void cic_decimate64(CICState64 *cic, uint8_t *buf, int len)
-{
-	uint32_t offset = 0x08000800;
-	uint32_t *capture = (uint32_t*)buf;
-	uint32_t *nco_base = (uint32_t*)NCO_BUFFER;
-	int16_t *result = (int16_t*)DEST_BUFFER;
-
-	int64_t s0 = cic->s0;
-	int64_t s1 = cic->s1;
-	int64_t s2 = cic->s2;
-	int64_t d0 = cic->d0;
-	int64_t d1 = cic->d1;
-	int64_t d2 = cic->d2;
-	int64_t e0, e1, e2;
-	uint32_t f;
-	uint32_t x;
-	int i, j, k, l;
-
-	l = cic->dest;
-	for (i = 0; i < len / 4; ) {
-		for (j = 0; j < NCO_SAMPLES/2; ) {
-			for (k = 0; k < 8; k++) {
-				x = capture[i++];
-				x = __SSUB16(x, offset);
-				f = nco_base[j++];
-				s0 = __SMLALD(x, f, s0);
 				s1 += s0;
 				s2 += s1;
 			}
@@ -526,7 +463,8 @@ int main(void) {
 
 	//ConfigureNCOTable(2500000 / 20000); // 2.5MHz
 	//ConfigureNCOTable(2500000 / 5000); // 2.5MHz
-	ConfigureNCOTable(0); // 0MHz
+	ConfigureNCOTable(1000000 / 5000); // 1MHz
+	//ConfigureNCOTable(0); // 0MHz
 	memset(&cic1, 0, sizeof cic1);
 
 	VADC_Init();
