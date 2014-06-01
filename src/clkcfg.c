@@ -66,7 +66,7 @@ static uint32_t FindMDEC(uint32_t msel)
     default:
       for (im = msel; im <= PLL0_MSEL_MAX; im++)
       {
-        x = ((x ^ x>>1) & 1) << 14 | x>>1 & 0xFFFF;
+        x = (((x ^ x>>1) & 1) << 14) | (x>>1 & 0xFFFF);
       }
       return x;
   }
@@ -89,7 +89,7 @@ static uint32_t FindNDEC(uint32_t nsel)
     default:
       for (in = nsel; in <= PLL0_NSEL_MAX; in++)
       {
-        x = ((x ^ x>>2 ^ x>>3 ^ x>>4) & 1) << 7 | x>>1 & 0xFF;
+        x = (((x ^ x>>2 ^ x>>3 ^ x>>4) & 1) << 7) | (x>>1 & 0xFF);
       }
       return x;
   }
@@ -112,7 +112,7 @@ static uint32_t FindPDEC(uint32_t psel)
     default:
       for (ip = psel; ip <= PLL0_PSEL_MAX; ip++)
       {
-        x = ((x ^ x>>2) & 1) << 4 | x>>1 & 0x3F;
+        x = (((x ^ x>>2) & 1) << 4) | (x>>1 & 0x3F);
       }
       return x;
   }

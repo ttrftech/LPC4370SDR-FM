@@ -22,6 +22,8 @@
 #include <cr_section_macros.h>
 
 #include <stdio.h>
+#include <limits.h>
+#include <arm_math.h>
 
 #include "hsadctest.h"
 #include "meas.h"
@@ -41,7 +43,7 @@ static GPDMA_LLI_Type DMA_Stuff[DMA_NUM_LLI_TO_USE];
 #define PLL0_MSEL	400
 #define PLL0_NSEL	15
 #define PLL0_PSEL	8
-#define ADCCLK_MATCHVALUE	(2 - 1)  // 80MHz / 4 = 20MHz
+#define ADCCLK_MATCHVALUE	(8 - 1)  // 80MHz / 4 = 20MHz
 #define ADCCLK_DGECI 0
 
 #define SETTINGS_GPIO_IN    (PUP_DISABLE | PDN_DISABLE | SLEWRATE_SLOW | INBUF_ENABLE  | FILTER_ENABLE)
@@ -123,12 +125,155 @@ int32_t capture_count;
 #define CAPTUREBUFFER		((uint8_t*)0x20000000)
 #define CAPTUREBUFFER_SIZE	0x8000
 
-#define DESTBUFFER			((uint8_t*)0x20008000)
-#define DESTBUFFER_SIZE		0x8000
+#define DEST_BUFFER			((uint8_t*)0x20008000)
+#define DEST_BUFFER_SIZE		0x4000
+
+#define NCO_BUFFER			((uint8_t*)0x2000C000)
+#define NCO_BUFFER_SIZE		0x800
+#define NCO_SAMPLES			1024
+
+/*
+ * DSP Processing
+ */
+
+#define NCO_CYCLE 1000
+#define NCO_SAMPLES 1024
+#define NCO_COS_OFFSET (NCO_CYCLE/4)
+
+static void ConfigureNCOTable(int freq)
+{
+	int i;
+	int16_t *tbl = (int16_t*)NCO_BUFFER;
+	for (i = 0; i < NCO_SAMPLES; i++) {
+		tbl[i] = (int16_t)(arm_cos_f32(2*PI*freq*(i+0.5)/NCO_CYCLE) * SHRT_MAX / 16);
+		//tbl[i] = 1;
+	}
+}
 
 
-// TODO: insert other definitions and declarations here
+typedef struct {
+	int32_t s0;
+	int32_t s1;
+	int32_t s2;
+	int32_t d0;
+	int32_t d1;
+	int32_t d2;
+	int32_t dest;
+} CICState;
 
+static void cic_decimate(CICState *cic, uint8_t *buf, int len)
+{
+	uint32_t offset = 0x08000800;
+	uint32_t *capture = (uint32_t*)buf;
+	uint32_t *nco_base = (uint32_t*)NCO_BUFFER;
+	int16_t *result = (int16_t*)DEST_BUFFER;
+
+	int32_t s0 = cic->s0;
+	int32_t s1 = cic->s1;
+	int32_t s2 = cic->s2;
+	int32_t d0 = cic->d0;
+	int32_t d1 = cic->d1;
+	int32_t d2 = cic->d2;
+	int32_t e0, e1, e2;
+	uint32_t f;
+	uint32_t x;
+	int i, j, k, l;
+
+	l = cic->dest;
+	for (i = 0; i < len / 4; ) {
+		for (j = 0; j < NCO_SAMPLES/2; ) {
+			for (k = 0; k < 8; k++) {
+				x = capture[i++];
+				x = __SSUB16(x, offset);
+				f = nco_base[j++];
+				s0 = __SMLAD(x, f, s0);
+				s1 += s0;
+				s2 += s1;
+				/*d00 = d0[k] - s2;
+				d0[k] = s2;
+				d11 = d1[k] - d00;
+				d1[k] = d00;
+				d22 = d2[k] - d11;
+				d2[k] = d11;*/
+			}
+			e0 = d0 - s2;
+			d0 = s2;
+			e1 = d1 - e0;
+			d1 = e0;
+			e2 = d2 - e1;
+			d2 = e1;
+			result[l++] = e2 >> 16;
+			l %=  DEST_BUFFER_SIZE/2;
+		}
+	}
+	cic->dest = l;
+	cic->s0 = s0;
+	cic->s1 = s1;
+	cic->s2 = s2;
+	cic->d0 = d0;
+	cic->d1 = d1;
+	cic->d2 = d2;
+}
+
+typedef struct {
+	int64_t s0;
+	int64_t s1;
+	int64_t s2;
+	int64_t d0;
+	int64_t d1;
+	int64_t d2;
+	int32_t dest;
+} CICState64;
+
+static void cic_decimate64(CICState64 *cic, uint8_t *buf, int len)
+{
+	uint32_t offset = 0x08000800;
+	uint32_t *capture = (uint32_t*)buf;
+	uint32_t *nco_base = (uint32_t*)NCO_BUFFER;
+	int16_t *result = (int16_t*)DEST_BUFFER;
+
+	int64_t s0 = cic->s0;
+	int64_t s1 = cic->s1;
+	int64_t s2 = cic->s2;
+	int64_t d0 = cic->d0;
+	int64_t d1 = cic->d1;
+	int64_t d2 = cic->d2;
+	int64_t e0, e1, e2;
+	uint32_t f;
+	uint32_t x;
+	int i, j, k, l;
+
+	l = cic->dest;
+	for (i = 0; i < len / 4; ) {
+		for (j = 0; j < NCO_SAMPLES/2; ) {
+			for (k = 0; k < 8; k++) {
+				x = capture[i++];
+				x = __SSUB16(x, offset);
+				f = nco_base[j++];
+				s0 = __SMLALD(x, f, s0);
+				s1 += s0;
+				s2 += s1;
+			}
+			e0 = d0 - s2;
+			d0 = s2;
+			e1 = d1 - e0;
+			d1 = e0;
+			e2 = d2 - e1;
+			d2 = e1;
+			result[l++] = e2 >> 16;
+			l %=  DEST_BUFFER_SIZE/2;
+		}
+	}
+	cic->dest = l;
+	cic->s0 = s0;
+	cic->s1 = s1;
+	cic->s2 = s2;
+	cic->d0 = d0;
+	cic->d1 = d1;
+	cic->d2 = d2;
+}
+
+static CICState cic1;
 
 void DMA_IRQHandler (void)
 {
@@ -141,15 +286,19 @@ void DMA_IRQHandler (void)
 
   if (LPC_GPDMA->INTTCSTAT & 1)
   {
-    LPC_GPDMA->INTTCCLEAR = 1;
+	LPC_GPDMA->INTTCCLEAR = 1;
+	//LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
 
-    //TOGGLE_MEAS_PIN_3();
+	//TOGGLE_MEAS_PIN_3();
     int length = CAPTUREBUFFER_SIZE / 2;
 	SET_MEAS_PIN_3();
     if ((capture_count & 1) == 0)
-    	MEMCPY(DESTBUFFER, CAPTUREBUFFER, length);
+    	//MEMCPY(DEST_BUFFER, CAPTUREBUFFER, length);
+    	cic_decimate(&cic1, CAPTUREBUFFER, length);
     else
-    	MEMCPY(DESTBUFFER + length, CAPTUREBUFFER + length, length);
+    	//MEMCPY(DEST_BUFFER + length, CAPTUREBUFFER + length, length);
+    	//MEMCPY(DEST_BUFFER, CAPTUREBUFFER + length, length);
+    	cic_decimate(&cic1, CAPTUREBUFFER + length, length);
     CLR_MEAS_PIN_3();
     capture_count ++;
   }
@@ -348,7 +497,7 @@ static void VADC_Stop(void)
   // Reset the VADC block
   RGU_SoftReset(RGU_SIG_VADC);
   while(RGU_GetSignalStatus(RGU_SIG_VADC));
-  */
+*/
 }
 
 static void priorityConfig()
@@ -375,15 +524,25 @@ int main(void) {
 	LPC_GPIO_PORT->DIR[3] |= (1UL << 7);
 	LPC_GPIO_PORT->SET[3] |= (1UL << 7);
 
+	//ConfigureNCOTable(2500000 / 20000); // 2.5MHz
+	//ConfigureNCOTable(2500000 / 5000); // 2.5MHz
+	ConfigureNCOTable(0); // 0MHz
+	memset(&cic1, 0, sizeof cic1);
+
 	VADC_Init();
 	VADC_Start();
     //volatile static int i = 0 ;
 
     while(1) {
         //i++ ;
-        if ((capture_count / 1024) % 2)
+        if ((capture_count / 1024) % 2) {
+        	LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
+            //int length = CAPTUREBUFFER_SIZE / 2;
+        	//memset(DEST_BUFFER, 0, DEST_BUFFER_SIZE);
+            //cic_decimate(&cic1, CAPTUREBUFFER, length);
+
         	GPIO_SetValue(0,1<<8);
-        else
+        } else
         	GPIO_ClearValue(0,1<<8);
         //if ((i & 0x1fffff) == 0x100000)
         //	printf("%d\n", i);
