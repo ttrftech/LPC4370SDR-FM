@@ -39,12 +39,13 @@
 #define DMA_NUM_LLI_TO_USE    4
 static GPDMA_LLI_Type DMA_Stuff[DMA_NUM_LLI_TO_USE];
 
-// ADC sampling rate: 20MHz
+// PLL0AUDIO: 40MHz = (12MHz / 15) * (400 * 2) / (8 * 2)
 #define PLL0_MSEL	400
 #define PLL0_NSEL	15
 #define PLL0_PSEL	8
-//#define ADCCLK_MATCHVALUE	(2 - 1)  // 80MHz / 4 = 20MHz
+//#define ADCCLK_MATCHVALUE	(2 - 1)  // 40MHz / 2 = 20MHz
 #define ADCCLK_MATCHVALUE	(8 - 1)  // 40MHz / 8 = 5MHz
+//#define ADCCLK_MATCHVALUE	(16 - 1)  // 40MHz / 16 = 2.5MHz
 //#define ADCCLK_MATCHVALUE	(4 - 1)  // 40MHz / 8 = 5MHz
 #define ADCCLK_DGECI 0
 
@@ -124,13 +125,17 @@ typedef struct {                            /*!< (@ 0x400F0000) VADC Structure  
 
 int32_t capture_count;
 
-#define CAPTUREBUFFER		((uint8_t*)0x20000000)
+//#define CAPTUREBUFFER		((uint8_t*)0x20000000)
+//#define CAPTUREBUFFER		((uint8_t*)0x10080000)
+#define CAPTUREBUFFER		((uint8_t*)0x20004000)
 #define CAPTUREBUFFER_SIZE	0x8000
 
-#define DEST_BUFFER			((uint8_t*)0x20008000)
+#define DEST_BUFFER			((uint8_t*)0x20000000)
+//#define DEST_BUFFER			((uint8_t*)0x10088000)
 #define DEST_BUFFER_SIZE		0x4000
 
 #define NCO_BUFFER			((uint8_t*)0x2000C000)
+//#define NCO_BUFFER			((uint8_t*)0x1008C000)
 #define NCO_BUFFER_SIZE		0x800
 #define NCO_SAMPLES			1024
 
@@ -138,7 +143,7 @@ int32_t capture_count;
  * DSP Processing
  */
 
-#define NCO_CYCLE 1000
+#define NCO_CYCLE 1024
 #define NCO_SAMPLES 1024
 #define NCO_COS_OFFSET (NCO_CYCLE/4)
 
@@ -147,7 +152,7 @@ static void ConfigureNCOTable(int freq)
 	int i;
 	int16_t *tbl = (int16_t*)NCO_BUFFER;
 	for (i = 0; i < NCO_SAMPLES; i++) {
-		tbl[i] = (int16_t)(arm_cos_f32(2*PI*freq*(i+0.5)/NCO_CYCLE) * SHRT_MAX / 16);
+		tbl[i] = (int16_t)(arm_cos_f32(2*PI*freq*(i+0.5)/NCO_CYCLE) * SHRT_MAX);
 	}
 }
 
@@ -185,8 +190,8 @@ static void cic_decimate(CICState *cic, uint8_t *buf, int len)
 		for (j = 0; j < NCO_SAMPLES/2; ) {
 			for (k = 0; k < 8; k++) {
 				x = capture[i++];
-				x = __SSUB16(x, offset);
 				f = nco_base[j++];
+				x = __SSUB16(x, offset);
 				s0 = __SMLAD(x, f, s0);
 				s1 += s0;
 				s2 += s1;
@@ -197,7 +202,7 @@ static void cic_decimate(CICState *cic, uint8_t *buf, int len)
 			d1 = e0;
 			e2 = d2 - e1;
 			d2 = e1;
-			result[l++] = e2 >> 16;
+			result[l++] = e2 >> (16-4);
 			l %=  DEST_BUFFER_SIZE/2;
 		}
 	}
@@ -274,6 +279,7 @@ static void VADC_SetupDMA(void)
     DMA_Stuff[i].Control = (transSize << 0) |      // Transfersize (does not matter when flow control is handled by peripheral)
                            (0x2 << 12)  |          // Source Burst Size
                            (0x2 << 15)  |          // Destination Burst Size
+                           //(0x0 << 15)  |          // Destination Burst Size
                            (0x2 << 18)  |          // Source width // 32 bit width
                            (0x2 << 21)  |          // Destination width   // 32 bits
                            (0x1 << 24)  |          // Source AHB master 0 / 1
@@ -463,7 +469,8 @@ int main(void) {
 
 	//ConfigureNCOTable(2500000 / 20000); // 2.5MHz
 	//ConfigureNCOTable(2500000 / 5000); // 2.5MHz
-	ConfigureNCOTable(1000000 / 5000); // 1MHz
+	//ConfigureNCOTable(1000000 / 5000); // 1MHz
+	ConfigureNCOTable(400000 / 5000); // 400kHz
 	//ConfigureNCOTable(0); // 0MHz
 	memset(&cic1, 0, sizeof cic1);
 
@@ -474,7 +481,7 @@ int main(void) {
     while(1) {
         //i++ ;
         if ((capture_count / 1024) % 2) {
-        	LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
+        	//LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
             //int length = CAPTUREBUFFER_SIZE / 2;
         	//memset(DEST_BUFFER, 0, DEST_BUFFER_SIZE);
             //cic_decimate(&cic1, CAPTUREBUFFER, length);
