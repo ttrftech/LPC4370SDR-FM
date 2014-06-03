@@ -130,12 +130,12 @@ int32_t capture_count;
 #define CAPTUREBUFFER		((uint8_t*)0x20004000)
 #define CAPTUREBUFFER_SIZE	0x8000
 
-#define DEST_BUFFER			((uint8_t*)0x20000000)
+#define I_DEST_BUFFER			((uint8_t*)0x20000000)
 #define Q_DEST_BUFFER			((uint8_t*)0x10088000)
 //#define DEST_BUFFER			((uint8_t*)0x10088000)
 #define DEST_BUFFER_SIZE		0x4000
 
-#define NCO_BUFFER				((uint8_t*)0x2000C000)
+//#define NCO_BUFFER				((uint8_t*)0x2000C000)
 #define NCO_SIN_BUFFER			((uint8_t*)0x2000C000)
 #define NCO_COS_BUFFER			((uint8_t*)0x2000C800)
 //#define NCO_BUFFER			((uint8_t*)0x1008C000)
@@ -173,12 +173,12 @@ typedef struct {
 	int32_t dest;
 } CICState;
 
-static void cic_decimate(CICState *cic, uint8_t *buf, int len)
+static void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
 {
 	uint32_t offset = 0x08000800;
 	uint32_t *capture = (uint32_t*)buf;
-	uint32_t *nco_base = (uint32_t*)NCO_BUFFER;
-	int16_t *result = (int16_t*)DEST_BUFFER;
+	uint32_t *nco_base = (uint32_t*)NCO_SIN_BUFFER;
+	int16_t *result = (int16_t*)I_DEST_BUFFER;
 
 	int32_t s0 = cic->s0;
 	int32_t s1 = cic->s1;
@@ -269,7 +269,7 @@ static void cic_decimate_q(CICState *cic, uint8_t *buf, int len)
 	cic->d2 = d2;
 }
 
-static CICState cic1;
+static CICState cic_i;
 static CICState cic_q;
 
 void DMA_IRQHandler (void)
@@ -291,12 +291,12 @@ void DMA_IRQHandler (void)
 	SET_MEAS_PIN_3();
     if ((capture_count & 1) == 0) {
     	//MEMCPY(DEST_BUFFER, CAPTUREBUFFER, length);
-    	cic_decimate(&cic1, CAPTUREBUFFER, length);
+    	cic_decimate_i(&cic_i, CAPTUREBUFFER, length);
     	cic_decimate_q(&cic_q, CAPTUREBUFFER, length);
     } else {
     	//MEMCPY(DEST_BUFFER + length, CAPTUREBUFFER + length, length);
     	//MEMCPY(DEST_BUFFER, CAPTUREBUFFER + length, length);
-    	cic_decimate(&cic1, CAPTUREBUFFER + length, length);
+    	cic_decimate_i(&cic_i, CAPTUREBUFFER + length, length);
     	cic_decimate_q(&cic_q, CAPTUREBUFFER + length, length);
     }
     CLR_MEAS_PIN_3();
@@ -530,7 +530,7 @@ int main(void) {
 	//ConfigureNCOTable(1000000 / 5000); // 1MHz
 	ConfigureNCOTable(400000 / 5000); // 400kHz
 	//ConfigureNCOTable(0); // 0MHz
-	memset(&cic1, 0, sizeof cic1);
+	memset(&cic_i, 0, sizeof cic_i);
 	memset(&cic_q, 0, sizeof cic_q);
 
 	VADC_Init();
