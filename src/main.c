@@ -131,10 +131,13 @@ int32_t capture_count;
 #define CAPTUREBUFFER_SIZE	0x8000
 
 #define DEST_BUFFER			((uint8_t*)0x20000000)
+#define Q_DEST_BUFFER			((uint8_t*)0x10088000)
 //#define DEST_BUFFER			((uint8_t*)0x10088000)
 #define DEST_BUFFER_SIZE		0x4000
 
-#define NCO_BUFFER			((uint8_t*)0x2000C000)
+#define NCO_BUFFER				((uint8_t*)0x2000C000)
+#define NCO_SIN_BUFFER			((uint8_t*)0x2000C000)
+#define NCO_COS_BUFFER			((uint8_t*)0x2000C800)
 //#define NCO_BUFFER			((uint8_t*)0x1008C000)
 #define NCO_BUFFER_SIZE		0x800
 #define NCO_SAMPLES			1024
@@ -150,9 +153,12 @@ int32_t capture_count;
 static void ConfigureNCOTable(int freq)
 {
 	int i;
-	int16_t *tbl = (int16_t*)NCO_BUFFER;
+	int16_t *costbl = (int16_t*)NCO_SIN_BUFFER;
+	int16_t *sintbl = (int16_t*)NCO_COS_BUFFER;
 	for (i = 0; i < NCO_SAMPLES; i++) {
-		tbl[i] = (int16_t)(arm_cos_f32(2*PI*freq*(i+0.5)/NCO_CYCLE) * SHRT_MAX);
+		float32_t phase = 2*PI*freq*(i+0.5)/NCO_CYCLE;
+		costbl[i] = (int16_t)(arm_cos_f32(phase) * SHRT_MAX / 16);
+		sintbl[i] = (int16_t)(arm_sin_f32(phase) * SHRT_MAX / 16);
 	}
 }
 
@@ -188,7 +194,55 @@ static void cic_decimate(CICState *cic, uint8_t *buf, int len)
 	l = cic->dest;
 	for (i = 0; i < len / 4; ) {
 		for (j = 0; j < NCO_SAMPLES/2; ) {
-			for (k = 0; k < 8; k++) {
+			for (k = 0; k < 16; k++) {
+				x = capture[i++];
+				f = nco_base[j++];
+				x = __SSUB16(x, offset);
+				s0 = __SMLAD(x, f, s0);
+				s1 += s0;
+				s2 += s1;
+			}
+			e0 = d0 - s2;
+			d0 = s2;
+			e1 = d1 - e0;
+			d1 = e0;
+			e2 = d2 - e1;
+			d2 = e1;
+			result[l++] = e2 >> (16-4);
+			l %=  DEST_BUFFER_SIZE/2;
+		}
+	}
+	cic->dest = l;
+	cic->s0 = s0;
+	cic->s1 = s1;
+	cic->s2 = s2;
+	cic->d0 = d0;
+	cic->d1 = d1;
+	cic->d2 = d2;
+}
+
+static void cic_decimate_q(CICState *cic, uint8_t *buf, int len)
+{
+	uint32_t offset = 0x08000800;
+	uint32_t *capture = (uint32_t*)buf;
+	uint32_t *nco_base = (uint32_t*)NCO_COS_BUFFER;
+	int16_t *result = (int16_t*)Q_DEST_BUFFER;
+
+	int32_t s0 = cic->s0;
+	int32_t s1 = cic->s1;
+	int32_t s2 = cic->s2;
+	int32_t d0 = cic->d0;
+	int32_t d1 = cic->d1;
+	int32_t d2 = cic->d2;
+	int32_t e0, e1, e2;
+	uint32_t f;
+	uint32_t x;
+	int i, j, k, l;
+
+	l = cic->dest;
+	for (i = 0; i < len / 4; ) {
+		for (j = 0; j < NCO_SAMPLES/2; ) {
+			for (k = 0; k < 16; k++) {
 				x = capture[i++];
 				f = nco_base[j++];
 				x = __SSUB16(x, offset);
@@ -216,6 +270,7 @@ static void cic_decimate(CICState *cic, uint8_t *buf, int len)
 }
 
 static CICState cic1;
+static CICState cic_q;
 
 void DMA_IRQHandler (void)
 {
@@ -234,13 +289,16 @@ void DMA_IRQHandler (void)
 	//TOGGLE_MEAS_PIN_3();
     int length = CAPTUREBUFFER_SIZE / 2;
 	SET_MEAS_PIN_3();
-    if ((capture_count & 1) == 0)
+    if ((capture_count & 1) == 0) {
     	//MEMCPY(DEST_BUFFER, CAPTUREBUFFER, length);
     	cic_decimate(&cic1, CAPTUREBUFFER, length);
-    else
+    	cic_decimate_q(&cic_q, CAPTUREBUFFER, length);
+    } else {
     	//MEMCPY(DEST_BUFFER + length, CAPTUREBUFFER + length, length);
     	//MEMCPY(DEST_BUFFER, CAPTUREBUFFER + length, length);
     	cic_decimate(&cic1, CAPTUREBUFFER + length, length);
+    	cic_decimate_q(&cic_q, CAPTUREBUFFER + length, length);
+    }
     CLR_MEAS_PIN_3();
     capture_count ++;
   }
@@ -473,6 +531,7 @@ int main(void) {
 	ConfigureNCOTable(400000 / 5000); // 400kHz
 	//ConfigureNCOTable(0); // 0MHz
 	memset(&cic1, 0, sizeof cic1);
+	memset(&cic_q, 0, sizeof cic_q);
 
 	VADC_Init();
 	VADC_Start();
@@ -481,7 +540,7 @@ int main(void) {
     while(1) {
         //i++ ;
         if ((capture_count / 1024) % 2) {
-        	//LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
+        	LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
             //int length = CAPTUREBUFFER_SIZE / 2;
         	//memset(DEST_BUFFER, 0, DEST_BUFFER_SIZE);
             //cic_decimate(&cic1, CAPTUREBUFFER, length);
