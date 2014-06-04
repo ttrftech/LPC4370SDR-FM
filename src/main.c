@@ -130,10 +130,13 @@ int32_t capture_count;
 #define CAPTUREBUFFER		((uint8_t*)0x20004000)
 #define CAPTUREBUFFER_SIZE	0x8000
 
-#define I_DEST_BUFFER			((uint8_t*)0x20000000)
-#define Q_DEST_BUFFER			((uint8_t*)0x10088000)
+#define I_DEST_BUFFER			((q15_t*)0x20000000)
+#define Q_DEST_BUFFER			((q15_t*)0x10088000)
 //#define DEST_BUFFER			((uint8_t*)0x10088000)
 #define DEST_BUFFER_SIZE		0x4000
+
+#define I_FIR_BUFFER			((q15_t*)0x1008C000)
+#define FIR_BUFFER_SIZE			0x4000
 
 //#define NCO_BUFFER				((uint8_t*)0x2000C000)
 #define NCO_SIN_BUFFER			((uint8_t*)0x2000C000)
@@ -162,6 +165,19 @@ static void ConfigureNCOTable(int freq)
 	}
 }
 
+#define FIR_BLOCK_SIZE          32
+#define FIR_NUM_BLOCKS         	(8192 / 32)
+#define FIR_NUM_TAPS			32
+
+q15_t fir_coeff[FIR_NUM_TAPS] = {
+			-204,   -42,   328,   144,  -687,  -430,  1301,  1060, -2162,
+		   -2298,  3208,  4691, -4150, -9707,  3106, 22273, 22273,  3106,
+		   -9707, -4150,  4691,  3208, -2298, -2162,  1060,  1301,  -430,
+			-687,   144,   328,   -42,  -204
+};
+
+arm_fir_instance_q15 fir;
+q15_t fir_state[FIR_NUM_TAPS+FIR_BLOCK_SIZE];
 
 typedef struct {
 	int32_t s0;
@@ -532,6 +548,7 @@ int main(void) {
 	//ConfigureNCOTable(0); // 0MHz
 	memset(&cic_i, 0, sizeof cic_i);
 	memset(&cic_q, 0, sizeof cic_q);
+	arm_fir_init_q15(&fir, FIR_NUM_TAPS, fir_coeff, fir_state, FIR_BLOCK_SIZE);
 
 	VADC_Init();
 	VADC_Start();
@@ -540,12 +557,24 @@ int main(void) {
     while(1) {
         //i++ ;
         if ((capture_count / 1024) % 2) {
+        	int i;
         	LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
             //int length = CAPTUREBUFFER_SIZE / 2;
         	//memset(DEST_BUFFER, 0, DEST_BUFFER_SIZE);
             //cic_decimate(&cic1, CAPTUREBUFFER, length);
 
         	GPIO_SetValue(0,1<<8);
+        	SET_MEAS_PIN_3();
+    		q15_t *src = I_DEST_BUFFER;
+    		q15_t *dst = I_FIR_BUFFER;
+        	for (i = 0; i < FIR_NUM_BLOCKS; i++) {
+        		arm_fir_fast_q15(&fir, src, dst, FIR_BLOCK_SIZE);
+        		src += FIR_BLOCK_SIZE;
+        		dst += FIR_BLOCK_SIZE;
+        	}
+        	CLR_MEAS_PIN_3();
+        	GPIO_SetValue(0,1<<8);
+
         } else
         	GPIO_ClearValue(0,1<<8);
         //if ((i & 0x1fffff) == 0x100000)
