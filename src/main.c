@@ -191,10 +191,11 @@ typedef struct {
 
 static void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
 {
-	uint32_t offset = 0x08000800;
+	const uint32_t offset = 0x08000800;
+	int16_t *const result = (int16_t*)I_DEST_BUFFER;
 	uint32_t *capture = (uint32_t*)buf;
-	uint32_t *nco_base = (uint32_t*)NCO_SIN_BUFFER;
-	int16_t *result = (int16_t*)I_DEST_BUFFER;
+	const uint32_t *nco_base = (uint32_t*)NCO_SIN_BUFFER;
+	const uint32_t *nco = nco_base;
 
 	int32_t s0 = cic->s0;
 	int32_t s1 = cic->s1;
@@ -209,14 +210,16 @@ static void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
 
 	l = cic->dest;
 	for (i = 0; i < len / 4; ) {
+		nco = nco_base;
 		for (j = 0; j < NCO_SAMPLES/2; ) {
 			for (k = 0; k < 16; k++) {
 				x = capture[i++];
-				f = nco_base[j++];
+				f = *nco++;
 				x = __SSUB16(x, offset);
 				s0 = __SMLAD(x, f, s0);
 				s1 += s0;
 				s2 += s1;
+				j++;
 			}
 			e0 = d0 - s2;
 			d0 = s2;
@@ -239,10 +242,11 @@ static void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
 
 static void cic_decimate_q(CICState *cic, uint8_t *buf, int len)
 {
-	uint32_t offset = 0x08000800;
+	const uint32_t offset = 0x08000800;
+	int16_t *const result = (int16_t*)Q_DEST_BUFFER;
 	uint32_t *capture = (uint32_t*)buf;
-	uint32_t *nco_base = (uint32_t*)NCO_COS_BUFFER;
-	int16_t *result = (int16_t*)Q_DEST_BUFFER;
+	const uint32_t *nco_base = (uint32_t*)NCO_COS_BUFFER;
+	const uint32_t *nco = nco_base;
 
 	int32_t s0 = cic->s0;
 	int32_t s1 = cic->s1;
@@ -257,14 +261,16 @@ static void cic_decimate_q(CICState *cic, uint8_t *buf, int len)
 
 	l = cic->dest;
 	for (i = 0; i < len / 4; ) {
+		nco = nco_base;
 		for (j = 0; j < NCO_SAMPLES/2; ) {
 			for (k = 0; k < 16; k++) {
 				x = capture[i++];
-				f = nco_base[j++];
+				f = *nco++;
 				x = __SSUB16(x, offset);
 				s0 = __SMLAD(x, f, s0);
 				s1 += s0;
 				s2 += s1;
+				j++;
 			}
 			e0 = d0 - s2;
 			d0 = s2;
@@ -551,6 +557,10 @@ int main(void) {
 	arm_fir_init_q15(&fir, FIR_NUM_TAPS, fir_coeff, fir_state, FIR_BLOCK_SIZE);
 
 	VADC_Init();
+
+	/* wait 5 msec */
+	emc_WaitUS(5000);
+
 	VADC_Start();
     //volatile static int i = 0 ;
 
@@ -558,6 +568,7 @@ int main(void) {
         //i++ ;
         if ((capture_count / 1024) % 2) {
         	int i;
+#if 0
         	LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
             //int length = CAPTUREBUFFER_SIZE / 2;
         	//memset(DEST_BUFFER, 0, DEST_BUFFER_SIZE);
@@ -573,6 +584,7 @@ int main(void) {
         		dst += FIR_BLOCK_SIZE;
         	}
         	CLR_MEAS_PIN_3();
+#endif
         	GPIO_SetValue(0,1<<8);
 
         } else
