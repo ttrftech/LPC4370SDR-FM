@@ -125,23 +125,24 @@ typedef struct {                            /*!< (@ 0x400F0000) VADC Structure  
 
 int32_t capture_count;
 
-//#define CAPTUREBUFFER		((uint8_t*)0x20000000)
+
+#define CAPTUREBUFFER		((uint8_t*)0x20000000)
 //#define CAPTUREBUFFER		((uint8_t*)0x10080000)
-#define CAPTUREBUFFER		((uint8_t*)0x20004000)
-#define CAPTUREBUFFER_SIZE	0x8000
+//#define CAPTUREBUFFER		((uint8_t*)0x20004000)
+#define CAPTUREBUFFER_SIZE	0x10000
 
-#define I_DEST_BUFFER			((q15_t*)0x20000000)
-#define Q_DEST_BUFFER			((q15_t*)0x10088000)
-//#define DEST_BUFFER			((uint8_t*)0x10088000)
-#define DEST_BUFFER_SIZE		0x4000
+#define I_FIR_STATE			((q15_t*)0x10080000)
+#define I_FIR_BUFFER		((q15_t*)0x10080040)
+#define Q_FIR_STATE			((q15_t*)0x10084040)
+#define Q_FIR_BUFFER		((q15_t*)0x10084080)
+#define FIR_BUFFER_SIZE		0x4000
+#define FIR_STATE_SIZE		0x40
 
-#define I_FIR_BUFFER			((q15_t*)0x1008C000)
-#define FIR_BUFFER_SIZE			0x4000
+#define DEMOD_BUFFER 		((q15_t*)0x10088080)
+#define DEMOD_BUFFER_SIZE	0x8000
 
-//#define NCO_BUFFER				((uint8_t*)0x2000C000)
-#define NCO_SIN_BUFFER			((uint8_t*)0x2000C000)
-#define NCO_COS_BUFFER			((uint8_t*)0x2000C800)
-//#define NCO_BUFFER			((uint8_t*)0x1008C000)
+#define NCO_SIN_BUFFER		((uint8_t*)0x1008F000)
+#define NCO_COS_BUFFER		((uint8_t*)0x1008F800)
 #define NCO_BUFFER_SIZE		0x800
 #define NCO_SAMPLES			1024
 
@@ -176,8 +177,88 @@ q15_t fir_coeff[FIR_NUM_TAPS] = {
 			-687,   144,   328,   -42,  -204
 };
 
-arm_fir_instance_q15 fir;
-q15_t fir_state[FIR_NUM_TAPS+FIR_BLOCK_SIZE];
+//arm_fir_instance_q15 fir;
+//q15_t fir_state[FIR_NUM_TAPS+FIR_BLOCK_SIZE];
+
+void fir_filter_i()
+{
+	const uint32_t *coeff = (uint32_t*)fir_coeff;
+	const uint32_t *in_i = (const uint32_t *)I_FIR_STATE;
+	int32_t length = FIR_BUFFER_SIZE / sizeof(uint32_t);
+	uint32_t *dest = (uint32_t *)DEMOD_BUFFER;
+	int i, j;
+
+	for (i = 0; i < length; i++) {
+		q31_t acc0_i = 0;
+		q31_t acc1_i = 0;
+		uint32_t x0 = in_i[0];
+		for (j = 0; j < FIR_NUM_TAPS / 2; ) {
+			uint32_t c0 = coeff[j];
+			uint32_t x2 = in_i[++j];
+			acc0_i = __SMLAD(x0, c0, acc0_i);
+			uint32_t x1 = __PKHBT(x2, x0, 0);
+			acc1_i = __SMLADX(x1, c0, acc1_i);
+			x0 = x2;
+		}
+		dest[i] = __PKHBT(__SSAT((acc0_i >> 15), 16), __SSAT((acc1_i >> 15), 16), 16);
+		in_i++;
+	}
+
+	uint32_t *state_i = (uint32_t *)I_FIR_STATE;
+	for (i = 0; i < FIR_STATE_SIZE / sizeof(uint32_t); i++) {
+		//*state_i++ = *in_i++;
+	    __asm__ volatile ("ldr r0, [%0], #+4\n" : : "r" (in_i) : "r0");
+	    __asm__ volatile ("str r0, [%0], #+4\n" : : "r" (state_i));
+	}
+}
+
+void fir_filter_iq()
+{
+	const uint32_t *coeff = (uint32_t*)fir_coeff;
+	const uint32_t *in_i = (const uint32_t *)I_FIR_STATE;
+	const uint32_t *in_q = (const uint32_t *)I_FIR_STATE;
+	int32_t length = FIR_BUFFER_SIZE / sizeof(uint32_t);
+	uint32_t *dest = (uint32_t *)DEMOD_BUFFER;
+	int i, j;
+
+	for (i = 0; i < length; ) {
+		q31_t acc0_i = 0;
+		q31_t acc1_i = 0;
+		q31_t acc0_q = 0;
+		q31_t acc1_q = 0;
+		uint32_t x0 = in_i[0];
+		uint32_t y0 = in_q[0];
+		for (j = 0; j < FIR_NUM_TAPS / 2; ) {
+			uint32_t c0 = coeff[j];
+			uint32_t x2 = in_i[++j];
+			uint32_t y2 = in_q[++j];
+			acc0_i = __SMLAD(x0, c0, acc0_i);
+			acc0_q = __SMLAD(y0, c0, acc0_q);
+			uint32_t x1 = __PKHBT(x2, x0, 0);
+			uint32_t y1 = __PKHBT(y2, y0, 0);
+			acc1_i = __SMLADX(x1, c0, acc1_i);
+			acc1_q = __SMLADX(y1, c0, acc1_q);
+			x0 = x2;
+			y0 = y2;
+		}
+		dest[i++] = __PKHBT(__SSAT((acc0_i >> 15), 16), __SSAT((acc0_q >> 15), 16), 16);
+		dest[i++] = __PKHBT(__SSAT((acc1_i >> 15), 16), __SSAT((acc1_q >> 15), 16), 16);
+		in_i++;
+		in_q++;
+	}
+
+	uint32_t *state_i = (uint32_t *)I_FIR_STATE;
+	for (i = 0; i < FIR_STATE_SIZE / sizeof(uint32_t); i++) {
+		//*state_i++ = *in_i++;
+	    __asm__ volatile ("ldr r0, [%0], #+4\n"
+	    				  "str r0, [%1], #+4\n" : "+r" (in_i), "+r" (state_i) :: "r0");
+	}
+	uint32_t *state_q = (uint32_t *)Q_FIR_STATE;
+	for (i = 0; i < FIR_STATE_SIZE / sizeof(uint32_t); i++) {
+	    __asm__ volatile ("ldr r0, [%0], #+4\n"
+	    				  "str r0, [%1], #+4\n" : "+r" (in_q), "+r" (state_q) :: "r0");
+	}
+}
 
 typedef struct {
 	int32_t s0;
@@ -192,7 +273,7 @@ typedef struct {
 static void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
 {
 	const uint32_t offset = 0x08000800;
-	int16_t *const result = (int16_t*)I_DEST_BUFFER;
+	int16_t *const result = (int16_t*)I_FIR_BUFFER;
 	uint32_t *capture = (uint32_t*)buf;
 	const uint32_t *nco_base = (uint32_t*)NCO_SIN_BUFFER;
 	const uint32_t *nco = nco_base;
@@ -228,7 +309,7 @@ static void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
 			e2 = d2 - e1;
 			d2 = e1;
 			result[l++] = e2 >> (16-4);
-			l %=  DEST_BUFFER_SIZE/2;
+			l %=  FIR_BUFFER_SIZE/2;
 		}
 	}
 	cic->dest = l;
@@ -243,7 +324,7 @@ static void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
 static void cic_decimate_q(CICState *cic, uint8_t *buf, int len)
 {
 	const uint32_t offset = 0x08000800;
-	int16_t *const result = (int16_t*)Q_DEST_BUFFER;
+	int16_t *const result = (int16_t*)Q_FIR_BUFFER;
 	uint32_t *capture = (uint32_t*)buf;
 	const uint32_t *nco_base = (uint32_t*)NCO_COS_BUFFER;
 	const uint32_t *nco = nco_base;
@@ -279,7 +360,7 @@ static void cic_decimate_q(CICState *cic, uint8_t *buf, int len)
 			e2 = d2 - e1;
 			d2 = e1;
 			result[l++] = e2 >> (16-4);
-			l %=  DEST_BUFFER_SIZE/2;
+			l %=  FIR_BUFFER_SIZE/2;
 		}
 	}
 	cic->dest = l;
@@ -554,7 +635,7 @@ int main(void) {
 	//ConfigureNCOTable(0); // 0MHz
 	memset(&cic_i, 0, sizeof cic_i);
 	memset(&cic_q, 0, sizeof cic_q);
-	arm_fir_init_q15(&fir, FIR_NUM_TAPS, fir_coeff, fir_state, FIR_BLOCK_SIZE);
+	//arm_fir_init_q15(&fir, FIR_NUM_TAPS, fir_coeff, fir_state, FIR_BLOCK_SIZE);
 
 	VADC_Init();
 
@@ -568,7 +649,6 @@ int main(void) {
         //i++ ;
         if ((capture_count / 1024) % 2) {
         	int i;
-#if 0
         	LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
             //int length = CAPTUREBUFFER_SIZE / 2;
         	//memset(DEST_BUFFER, 0, DEST_BUFFER_SIZE);
@@ -576,6 +656,8 @@ int main(void) {
 
         	GPIO_SetValue(0,1<<8);
         	SET_MEAS_PIN_3();
+        	fir_filter_iq();
+#if 0
     		q15_t *src = I_DEST_BUFFER;
     		q15_t *dst = I_FIR_BUFFER;
         	for (i = 0; i < FIR_NUM_BLOCKS; i++) {
@@ -583,8 +665,8 @@ int main(void) {
         		src += FIR_BLOCK_SIZE;
         		dst += FIR_BLOCK_SIZE;
         	}
-        	CLR_MEAS_PIN_3();
 #endif
+        	CLR_MEAS_PIN_3();
         	GPIO_SetValue(0,1<<8);
 
         } else
