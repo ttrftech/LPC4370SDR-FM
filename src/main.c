@@ -216,7 +216,7 @@ void fir_filter_iq()
 {
 	const uint32_t *coeff = (uint32_t*)fir_coeff;
 	const uint32_t *in_i = (const uint32_t *)I_FIR_STATE;
-	const uint32_t *in_q = (const uint32_t *)I_FIR_STATE;
+	const uint32_t *in_q = (const uint32_t *)Q_FIR_STATE;
 	int32_t length = FIR_BUFFER_SIZE / sizeof(uint32_t);
 	uint32_t *dest = (uint32_t *)DEMOD_BUFFER;
 	int i, j;
@@ -229,15 +229,13 @@ void fir_filter_iq()
 		uint32_t x0 = in_i[0];
 		uint32_t y0 = in_q[0];
 		for (j = 0; j < FIR_NUM_TAPS / 2; ) {
-			uint32_t c0 = coeff[j];
-			uint32_t x2 = in_i[++j];
-			uint32_t y2 = in_q[++j];
+			uint32_t c0 = coeff[j++];
+			uint32_t x2 = in_i[j];
+			uint32_t y2 = in_q[j];
 			acc0_i = __SMLAD(x0, c0, acc0_i);
 			acc0_q = __SMLAD(y0, c0, acc0_q);
-			uint32_t x1 = __PKHBT(x2, x0, 0);
-			uint32_t y1 = __PKHBT(y2, y0, 0);
-			acc1_i = __SMLADX(x1, c0, acc1_i);
-			acc1_q = __SMLADX(y1, c0, acc1_q);
+			acc1_i = __SMLADX(__PKHBT(x2, x0, 0), c0, acc1_i);
+			acc1_q = __SMLADX(__PKHBT(y2, y0, 0), c0, acc1_q);
 			x0 = x2;
 			y0 = y2;
 		}
@@ -248,15 +246,16 @@ void fir_filter_iq()
 	}
 
 	uint32_t *state_i = (uint32_t *)I_FIR_STATE;
-	for (i = 0; i < FIR_STATE_SIZE / sizeof(uint32_t); i++) {
+	for (i = 0; i < FIR_STATE_SIZE; i += 4) {
 		//*state_i++ = *in_i++;
-	    __asm__ volatile ("ldr r0, [%0], #+4\n"
-	    				  "str r0, [%1], #+4\n" : "+r" (in_i), "+r" (state_i) :: "r0");
+	    __asm__ volatile ("ldr r0, [%0, %2]\n"
+	    				  "str r0, [%1, %2]\n" :: "l"(in_i), "l"(state_i), "X"(i): "r0");
 	}
 	uint32_t *state_q = (uint32_t *)Q_FIR_STATE;
-	for (i = 0; i < FIR_STATE_SIZE / sizeof(uint32_t); i++) {
-	    __asm__ volatile ("ldr r0, [%0], #+4\n"
-	    				  "str r0, [%1], #+4\n" : "+r" (in_q), "+r" (state_q) :: "r0");
+	for (i = 0; i < FIR_STATE_SIZE; i += 4) {
+		//*state_q++ = *in_q++;
+	    __asm__ volatile ("ldr r0, [%0, %2]\n"
+	    				  "str r0, [%1, %2]\n" :: "l"(in_q), "l"(state_q), "X"(i): "r0");
 	}
 }
 
