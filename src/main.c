@@ -44,9 +44,9 @@ static GPDMA_LLI_Type DMA_Stuff[DMA_NUM_LLI_TO_USE];
 #define PLL0_NSEL	15
 #define PLL0_PSEL	8
 //#define ADCCLK_MATCHVALUE	(2 - 1)  // 40MHz / 2 = 20MHz
-#define ADCCLK_MATCHVALUE	(8 - 1)  // 40MHz / 8 = 5MHz
+#define ADCCLK_MATCHVALUE	(4 - 1)  // 40MHz / 4 = 10MHz
+//#define ADCCLK_MATCHVALUE	(8 - 1)  // 40MHz / 8 = 5MHz
 //#define ADCCLK_MATCHVALUE	(16 - 1)  // 40MHz / 16 = 2.5MHz
-//#define ADCCLK_MATCHVALUE	(4 - 1)  // 40MHz / 8 = 5MHz
 #define ADCCLK_DGECI 0
 
 #define SETTINGS_GPIO_IN    (PUP_DISABLE | PDN_DISABLE | SLEWRATE_SLOW | INBUF_ENABLE  | FILTER_ENABLE)
@@ -126,25 +126,39 @@ typedef struct {                            /*!< (@ 0x400F0000) VADC Structure  
 int32_t capture_count;
 
 
-#define CAPTUREBUFFER		((uint8_t*)0x20000000)
+//#define CAPTUREBUFFER		((uint8_t*)0x20000000)
 //#define CAPTUREBUFFER		((uint8_t*)0x10080000)
-//#define CAPTUREBUFFER		((uint8_t*)0x20004000)
-#define CAPTUREBUFFER_SIZE	0x10000
-
-#define I_FIR_STATE			((q15_t*)0x10080000)
-#define I_FIR_BUFFER		((q15_t*)0x10080040)
-#define Q_FIR_STATE			((q15_t*)0x10084040)
-#define Q_FIR_BUFFER		((q15_t*)0x10084080)
-#define FIR_BUFFER_SIZE		0x4000
-#define FIR_STATE_SIZE		0x40
-
-#define DEMOD_BUFFER 		((q15_t*)0x10088080)
-#define DEMOD_BUFFER_SIZE	0x8000
+#define CAPTUREBUFFER		((uint8_t*)0x20004000)
+#define CAPTUREBUFFER_SIZE	0x8000
 
 #define NCO_SIN_BUFFER		((uint8_t*)0x1008F000)
 #define NCO_COS_BUFFER		((uint8_t*)0x1008F800)
 #define NCO_BUFFER_SIZE		0x800
 #define NCO_SAMPLES			1024
+#define NCO_AMPL			(SHRT_MAX / 16)
+//#define NCO_AMPL			(SHRT_MAX / 4)
+
+#define DECIMATE			32
+
+#define I_FIR_STATE			((q15_t*)0x10080000)
+#define I_FIR_BUFFER		((q15_t*)0x10080040)
+#define Q_FIR_STATE			((q15_t*)0x10084040)
+#define Q_FIR_BUFFER		((q15_t*)0x10084080)
+#define FIR_BUFFER_SIZE		0x400
+#define FIR_STATE_SIZE		0x40
+//#define FIR_GAIN			(16-8)
+#define FIR_GAIN			(16-4)
+//#define FIR_GAIN			(16)
+
+#define DEMOD_STATE 		((q15_t*)0x10088080)
+#define DEMOD_STATE_SIZE	0x100
+#define DEMOD_BUFFER 		((q15_t*)0x10088180)
+#define DEMOD_BUFFER_SIZE	0x400
+#define AUDIO_BUFFER 		((q15_t*)0x1008C080)
+#define AUDIO_BUFFER_SIZE	0x2000
+
+
+
 
 /*
  * DSP Processing
@@ -161,13 +175,11 @@ static void ConfigureNCOTable(int freq)
 	int16_t *sintbl = (int16_t*)NCO_COS_BUFFER;
 	for (i = 0; i < NCO_SAMPLES; i++) {
 		float32_t phase = 2*PI*freq*(i+0.5)/NCO_CYCLE;
-		costbl[i] = (int16_t)(arm_cos_f32(phase) * SHRT_MAX / 16);
-		sintbl[i] = (int16_t)(arm_sin_f32(phase) * SHRT_MAX / 16);
+		costbl[i] = (int16_t)(arm_cos_f32(phase) * NCO_AMPL);
+		sintbl[i] = (int16_t)(arm_sin_f32(phase) * NCO_AMPL);
 	}
 }
 
-#define FIR_BLOCK_SIZE          32
-#define FIR_NUM_BLOCKS         	(8192 / 32)
 #define FIR_NUM_TAPS			32
 
 q15_t fir_coeff[FIR_NUM_TAPS] = {
@@ -177,8 +189,120 @@ q15_t fir_coeff[FIR_NUM_TAPS] = {
 			-687,   144,   328,   -42,  -204
 };
 
-//arm_fir_instance_q15 fir;
-//q15_t fir_state[FIR_NUM_TAPS+FIR_BLOCK_SIZE];
+typedef struct {
+	int32_t s0;
+	int32_t s1;
+	int32_t s2;
+	int32_t d0;
+	int32_t d1;
+	int32_t d2;
+	int32_t dest;
+} CICState;
+
+static CICState cic_i;
+static CICState cic_q;
+
+static void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
+{
+	const uint32_t offset = 0x08000800;
+	int16_t *const result = (int16_t*)I_FIR_BUFFER;
+	uint32_t *capture = (uint32_t*)buf;
+	const uint32_t *nco_base = (uint32_t*)NCO_SIN_BUFFER;
+	const uint32_t *nco = nco_base;
+
+	int32_t s0 = cic->s0;
+	int32_t s1 = cic->s1;
+	int32_t s2 = cic->s2;
+	int32_t d0 = cic->d0;
+	int32_t d1 = cic->d1;
+	int32_t d2 = cic->d2;
+	int32_t e0, e1, e2;
+	uint32_t f;
+	uint32_t x;
+	int i, j, k, l;
+
+	l = cic->dest;
+	for (i = 0; i < len / 4; ) {
+		nco = nco_base;
+		for (j = 0; j < NCO_SAMPLES/2; ) {
+			for (k = 0; k < DECIMATE / 2; k++) {
+				x = capture[i++];
+				f = *nco++;
+				x = __SSUB16(x, offset);
+				s0 = __SMLAD(x, f, s0);
+				s1 += s0;
+				s2 += s1;
+				j++;
+			}
+			e0 = d0 - s2;
+			d0 = s2;
+			e1 = d1 - e0;
+			d1 = e0;
+			e2 = d2 - e1;
+			d2 = e1;
+			result[l++] = e2 >> FIR_GAIN;
+			l %=  FIR_BUFFER_SIZE/2;
+		}
+	}
+	cic->dest = l;
+	cic->s0 = s0;
+	cic->s1 = s1;
+	cic->s2 = s2;
+	cic->d0 = d0;
+	cic->d1 = d1;
+	cic->d2 = d2;
+}
+
+static void cic_decimate_q(CICState *cic, uint8_t *buf, int len)
+{
+	const uint32_t offset = 0x08000800;
+	int16_t *const result = (int16_t*)Q_FIR_BUFFER;
+	uint32_t *capture = (uint32_t*)buf;
+	const uint32_t *nco_base = (uint32_t*)NCO_COS_BUFFER;
+	const uint32_t *nco = nco_base;
+
+	int32_t s0 = cic->s0;
+	int32_t s1 = cic->s1;
+	int32_t s2 = cic->s2;
+	int32_t d0 = cic->d0;
+	int32_t d1 = cic->d1;
+	int32_t d2 = cic->d2;
+	int32_t e0, e1, e2;
+	uint32_t f;
+	uint32_t x;
+	int i, j, k, l;
+
+	l = cic->dest;
+	for (i = 0; i < len / 4; ) {
+		nco = nco_base;
+		for (j = 0; j < NCO_SAMPLES/2; ) {
+			for (k = 0; k < 16; k++) {
+				x = capture[i++];
+				f = *nco++;
+				x = __SSUB16(x, offset);
+				s0 = __SMLAD(x, f, s0);
+				s1 += s0;
+				s2 += s1;
+				j++;
+			}
+			e0 = d0 - s2;
+			d0 = s2;
+			e1 = d1 - e0;
+			d1 = e0;
+			e2 = d2 - e1;
+			d2 = e1;
+			result[l++] = e2 >> FIR_GAIN;
+			l %=  FIR_BUFFER_SIZE/2;
+		}
+	}
+	cic->dest = l;
+	cic->s0 = s0;
+	cic->s1 = s1;
+	cic->s2 = s2;
+	cic->d0 = d0;
+	cic->d1 = d1;
+	cic->d2 = d2;
+}
 
 void fir_filter_i()
 {
@@ -259,120 +383,131 @@ void fir_filter_iq()
 	}
 }
 
-typedef struct {
-	int32_t s0;
-	int32_t s1;
-	int32_t s2;
-	int32_t d0;
-	int32_t d1;
-	int32_t d2;
-	int32_t dest;
-} CICState;
+struct {
+	uint32_t last;
+} fm_demod_state;
 
-static void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
+void fm_demod()
 {
-	const uint32_t offset = 0x08000800;
-	int16_t *const result = (int16_t*)I_FIR_BUFFER;
-	uint32_t *capture = (uint32_t*)buf;
-	const uint32_t *nco_base = (uint32_t*)NCO_SIN_BUFFER;
-	const uint32_t *nco = nco_base;
+	uint32_t *src = (uint32_t *)DEMOD_BUFFER;
+	int16_t *dest = (int16_t *)AUDIO_BUFFER;
+	int32_t length = DEMOD_BUFFER_SIZE / sizeof(uint32_t);
+	int i;
 
-	int32_t s0 = cic->s0;
-	int32_t s1 = cic->s1;
-	int32_t s2 = cic->s2;
-	int32_t d0 = cic->d0;
-	int32_t d1 = cic->d1;
-	int32_t d2 = cic->d2;
-	int32_t e0, e1, e2;
-	uint32_t f;
-	uint32_t x;
-	int i, j, k, l;
-
-	l = cic->dest;
-	for (i = 0; i < len / 4; ) {
-		nco = nco_base;
-		for (j = 0; j < NCO_SAMPLES/2; ) {
-			for (k = 0; k < 16; k++) {
-				x = capture[i++];
-				f = *nco++;
-				x = __SSUB16(x, offset);
-				s0 = __SMLAD(x, f, s0);
-				s1 += s0;
-				s2 += s1;
-				j++;
-			}
-			e0 = d0 - s2;
-			d0 = s2;
-			e1 = d1 - e0;
-			d1 = e0;
-			e2 = d2 - e1;
-			d2 = e1;
-			result[l++] = e2 >> (16-4);
-			l %=  FIR_BUFFER_SIZE/2;
-		}
+	uint32_t x0 = fm_demod_state.last;
+	for (i = 0; i < length; i++) {
+		uint32_t x1 = src[i];
+		int32_t d = __SMUSDX(__SSUB16(x1, x0), x1);
+		int32_t n = __SMUAD(x1, x1) >> 12;
+		int16_t y = d / n;
+		dest[i] = y;
+		x0 = x1;
 	}
-	cic->dest = l;
-	cic->s0 = s0;
-	cic->s1 = s1;
-	cic->s2 = s2;
-	cic->d0 = d0;
-	cic->d1 = d1;
-	cic->d2 = d2;
+	fm_demod_state.last = x0;
 }
 
-static void cic_decimate_q(CICState *cic, uint8_t *buf, int len)
+#define RESAMPLE_NUM_TAPS	128
+
+q15_t resample_fir_coeff_even[RESAMPLE_NUM_TAPS] = {
+		  0,    0,    1,    2,    3,    4,    6,    7,    9,   11,   12,
+		 14,   15,   17,   18,   18,   18,   17,   15,   13,    9,    4,
+		 -1,   -7,  -15,  -24,  -33,  -43,  -53,  -63,  -73,  -82,  -90,
+		-96, -100, -102, -101,  -97,  -89,  -78,  -62,  -42,  -18,    9,
+		 42,   79,  120,  163,  210,  259,  310,  362,  414,  465,  515,
+		563,  608,  649,  686,  717,  743,  763,  777,  784,  784,  777,
+		763,  743,  717,  686,  649,  608,  563,  515,  465,  414,  362,
+		310,  259,  210,  163,  120,   79,   42,    9,  -18,  -42,  -62,
+		-78,  -89,  -97, -101, -102, -100,  -96,  -90,  -82,  -73,  -63,
+		-53,  -43,  -33,  -24,  -15,   -7,   -1,    4,    9,   13,   15,
+		 17,   18,   18,   18,   17,   15,   14,   12,   11,    9,    7,
+		  6,    4,    3,    2,    1,    0,    0};
+q15_t resample_fir_coeff_odd[RESAMPLE_NUM_TAPS] = {
+		  0,    0,    1,    2,    4,    5,    6,    8,   10,   12,   13,
+		 15,   16,   17,   18,   18,   17,   16,   14,   11,    7,    1,
+		 -4,  -11,  -19,  -28,  -38,  -48,  -58,  -68,  -77,  -86,  -93,
+		-98, -101, -102, -100,  -94,  -84,  -70,  -53,  -31,   -4,   25,
+		 60,   99,  141,  187,  235,  285,  336,  388,  440,  490,  539,
+		586,  629,  668,  702,  731,  754,  771,  781,  784,  781,  771,
+		754,  731,  702,  668,  629,  586,  539,  490,  440,  388,  336,
+		285,  235,  187,  141,   99,   60,   25,   -4,  -31,  -53,  -70,
+		-84,  -94, -100, -102, -101,  -98,  -93,  -86,  -77,  -68,  -58,
+		-48,  -38,  -28,  -19,  -11,   -4,    1,    7,   11,   14,   16,
+		 17,   18,   18,   17,   16,   15,   13,   12,   10,    8,    6,
+		  5,    4,    2,    1,    0,    0,    0};
+
+// 312.5kHz * 2/13 -> 48.076923kHz
+
+struct {
+	int index;
+	int current;
+} resample_state;
+
+void resample_fir_filter()
 {
-	const uint32_t offset = 0x08000800;
-	int16_t *const result = (int16_t*)Q_FIR_BUFFER;
-	uint32_t *capture = (uint32_t*)buf;
-	const uint32_t *nco_base = (uint32_t*)NCO_COS_BUFFER;
-	const uint32_t *nco = nco_base;
+	const uint32_t *coeff;
+	const uint32_t *src = (const uint32_t *)DEMOD_STATE;
+	int32_t tail = DEMOD_BUFFER_SIZE;
+	int idx = resample_state.index;
+	uint32_t acc;
+	uint32_t x0, c0, x1, x2;
+	int i, j;
+	int cur = resample_state.current;
+	uint16_t *dest = (uint16_t *)AUDIO_BUFFER;
 
-	int32_t s0 = cic->s0;
-	int32_t s1 = cic->s1;
-	int32_t s2 = cic->s2;
-	int32_t d0 = cic->d0;
-	int32_t d1 = cic->d1;
-	int32_t d2 = cic->d2;
-	int32_t e0, e1, e2;
-	uint32_t f;
-	uint32_t x;
-	int i, j, k, l;
+	while (idx < tail) {
+		int cls = idx & 0x3;
+		i = idx >> 2;
 
-	l = cic->dest;
-	for (i = 0; i < len / 4; ) {
-		nco = nco_base;
-		for (j = 0; j < NCO_SAMPLES/2; ) {
-			for (k = 0; k < 16; k++) {
-				x = capture[i++];
-				f = *nco++;
-				x = __SSUB16(x, offset);
-				s0 = __SMLAD(x, f, s0);
-				s1 += s0;
-				s2 += s1;
-				j++;
-			}
-			e0 = d0 - s2;
-			d0 = s2;
-			e1 = d1 - e0;
-			d1 = e0;
-			e2 = d2 - e1;
-			d2 = e1;
-			result[l++] = e2 >> (16-4);
-			l %=  FIR_BUFFER_SIZE/2;
+		switch (cls) {
+		case 0:
+		case 2:
+			coeff = (uint32_t*)resample_fir_coeff_even;
+			break;
+		case 1:
+		case 3:
+			coeff = (uint32_t*)resample_fir_coeff_odd;
+			break;
 		}
+
+		acc = 0;
+		switch (cls) {
+		case 0:
+		case 1:
+			for (j = 0; j < RESAMPLE_NUM_TAPS / 2; ) {
+				x0 = src[i+j];
+				c0 = coeff[j++];
+				acc = __SMLAD(x0, c0, acc);
+			}
+			break;
+		case 2:
+		case 3:
+			x0 = src[i];
+			for (j = 0; j < RESAMPLE_NUM_TAPS / 2; ) {
+				c0 = coeff[j++];
+				x2 = src[i+j];
+				x1 = __PKHBT(x2, x0, 0);
+				acc = __SMLADX(x1, c0, acc);
+				x0 = x2;
+			}
+			break;
+		}
+		dest[cur++] = __SSAT((acc >> 15), 16);
+		cur %= AUDIO_BUFFER_SIZE / 2;
+		//dest[cur++] = __PKHBT(__SSAT((acc0 >> 15), 16), __SSAT((acc1 >> 15), 16), 16);
+		idx += 13;
 	}
-	cic->dest = l;
-	cic->s0 = s0;
-	cic->s1 = s1;
-	cic->s2 = s2;
-	cic->d0 = d0;
-	cic->d1 = d1;
-	cic->d2 = d2;
+
+	resample_state.current = cur;
+	resample_state.index = idx - tail;
+	uint32_t *state = (uint32_t *)DEMOD_STATE;
+	src = &src[tail / sizeof(*src)];
+	for (i = 0; i < DEMOD_STATE_SIZE / sizeof(uint32_t); i++) {
+		//*state++ = *src++;
+	    __asm__ volatile ("ldr r0, [%0], #+4\n" : : "r" (src) : "r0");
+	    __asm__ volatile ("str r0, [%0], #+4\n" : : "r" (state));
+	}
 }
 
-static CICState cic_i;
-static CICState cic_q;
 
 void DMA_IRQHandler (void)
 {
@@ -381,7 +516,7 @@ void DMA_IRQHandler (void)
     LPC_GPDMA->INTERRCLR = 1;
   }
 
-#define MEMCPY __aeabi_memcpy8
+//#define MEMCPY __aeabi_memcpy8
 
   if (LPC_GPDMA->INTTCSTAT & 1)
   {
@@ -389,7 +524,7 @@ void DMA_IRQHandler (void)
 	//LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
 
 	//TOGGLE_MEAS_PIN_3();
-    int length = CAPTUREBUFFER_SIZE / 2;
+    const int length = CAPTUREBUFFER_SIZE / 2;
 	SET_MEAS_PIN_3();
     if ((capture_count & 1) == 0) {
     	//MEMCPY(DEST_BUFFER, CAPTUREBUFFER, length);
@@ -401,6 +536,9 @@ void DMA_IRQHandler (void)
     	cic_decimate_i(&cic_i, CAPTUREBUFFER + length, length);
     	cic_decimate_q(&cic_q, CAPTUREBUFFER + length, length);
     }
+	fir_filter_iq();
+	fm_demod();
+	resample_fir_filter();
     CLR_MEAS_PIN_3();
     capture_count ++;
   }
@@ -619,7 +757,9 @@ int main(void) {
     setup_pll0audio(PLL0_MSEL, PLL0_NSEL, PLL0_PSEL);
     priorityConfig();
 
-    printf("Hello World\n");
+    int32_t x = __SMUSD(0xe7acf59f, 0xdefe32f8);
+
+    printf("Hello World: %x\n", x);
     GPIO_SetDir(0,1<<8, 1);
 	GPIO_ClearValue(0,1<<8);
 
@@ -630,7 +770,8 @@ int main(void) {
 	//ConfigureNCOTable(2500000 / 20000); // 2.5MHz
 	//ConfigureNCOTable(2500000 / 5000); // 2.5MHz
 	//ConfigureNCOTable(1000000 / 5000); // 1MHz
-	ConfigureNCOTable(400000 / 5000); // 400kHz
+	//ConfigureNCOTable(420000 / 5000); // 400kHz
+	ConfigureNCOTable(420000 / 10000); // 400kHz
 	//ConfigureNCOTable(0); // 0MHz
 	memset(&cic_i, 0, sizeof cic_i);
 	memset(&cic_q, 0, sizeof cic_q);
@@ -641,13 +782,14 @@ int main(void) {
 	/* wait 5 msec */
 	emc_WaitUS(5000);
 
+	capture_count = 0;
 	VADC_Start();
     //volatile static int i = 0 ;
 
     while(1) {
         //i++ ;
         if ((capture_count / 1024) % 2) {
-        	int i;
+        	//int i;
         	LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
             //int length = CAPTUREBUFFER_SIZE / 2;
         	//memset(DEST_BUFFER, 0, DEST_BUFFER_SIZE);
@@ -656,6 +798,8 @@ int main(void) {
         	GPIO_SetValue(0,1<<8);
         	SET_MEAS_PIN_3();
         	fir_filter_iq();
+        	fm_demod();
+        	resample_fir_filter();
 #if 0
     		q15_t *src = I_DEST_BUFFER;
     		q15_t *dst = I_FIR_BUFFER;
