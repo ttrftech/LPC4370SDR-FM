@@ -36,7 +36,7 @@
 #define VADC_DMA_READ_SRC  (LPC_VADC_BASE + 512)  /* VADC FIFO */
 #define FIFO_SIZE       8
 
-#define DMA_NUM_LLI_TO_USE    4
+#define DMA_NUM_LLI_TO_USE    16
 static GPDMA_LLI_Type DMA_Stuff[DMA_NUM_LLI_TO_USE];
 
 // PLL0AUDIO: 40MHz = (12MHz / 15) * (400 * 2) / (8 * 2)
@@ -128,8 +128,8 @@ int32_t capture_count;
 
 //#define CAPTUREBUFFER		((uint8_t*)0x20000000)
 //#define CAPTUREBUFFER		((uint8_t*)0x10080000)
-#define CAPTUREBUFFER		((uint8_t*)0x20004000)
-#define CAPTUREBUFFER_SIZE	0x8000
+#define CAPTUREBUFFER		((uint8_t*)0x20000000)
+#define CAPTUREBUFFER_SIZE	0x10000
 
 #define NCO_SIN_BUFFER		((uint8_t*)0x1008F000)
 #define NCO_COS_BUFFER		((uint8_t*)0x1008F800)
@@ -144,17 +144,21 @@ int32_t capture_count;
 #define I_FIR_BUFFER		((q15_t*)0x10080040)
 #define Q_FIR_STATE			((q15_t*)0x10084040)
 #define Q_FIR_BUFFER		((q15_t*)0x10084080)
+/*  0x10000 / 2 / 32 */
 #define FIR_BUFFER_SIZE		0x400
 #define FIR_STATE_SIZE		0x40
+
 //#define FIR_GAIN			(16-8)
 #define FIR_GAIN			(16-4)
 //#define FIR_GAIN			(16)
 
-#define DEMOD_STATE 		((q15_t*)0x10088080)
-#define DEMOD_STATE_SIZE	0x100
-#define DEMOD_BUFFER 		((q15_t*)0x10088180)
-#define DEMOD_BUFFER_SIZE	0x400
-#define AUDIO_BUFFER 		((q15_t*)0x1008C080)
+#define DEMOD_BUFFER 		((q15_t*)0x10088000)
+#define DEMOD_BUFFER_SIZE	0x800
+#define RESAMPLE_STATE 		((q15_t*)0x10089000)
+#define RESAMPLE_STATE_SIZE	0x100
+#define RESAMPLE_BUFFER 	((q15_t*)0x10089100)
+#define RESAMPLE_BUFFER_SIZE 0x400
+#define AUDIO_BUFFER 		((q15_t*)0x1008A000)
 #define AUDIO_BUFFER_SIZE	0x2000
 
 
@@ -304,6 +308,7 @@ static void cic_decimate_q(CICState *cic, uint8_t *buf, int len)
 	cic->d2 = d2;
 }
 
+#if 0
 void fir_filter_i()
 {
 	const uint32_t *coeff = (uint32_t*)fir_coeff;
@@ -335,6 +340,7 @@ void fir_filter_i()
 	    __asm__ volatile ("str r0, [%0], #+4\n" : : "r" (state_i));
 	}
 }
+#endif
 
 void fir_filter_iq()
 {
@@ -345,7 +351,7 @@ void fir_filter_iq()
 	uint32_t *dest = (uint32_t *)DEMOD_BUFFER;
 	int i, j;
 
-	for (i = 0; i < length; ) {
+	for (i = 0; i < length; i++) {
 		q31_t acc0_i = 0;
 		q31_t acc1_i = 0;
 		q31_t acc0_q = 0;
@@ -363,8 +369,8 @@ void fir_filter_iq()
 			x0 = x2;
 			y0 = y2;
 		}
-		dest[i++] = __PKHBT(__SSAT((acc0_i >> 15), 16), __SSAT((acc0_q >> 15), 16), 16);
-		dest[i++] = __PKHBT(__SSAT((acc1_i >> 15), 16), __SSAT((acc1_q >> 15), 16), 16);
+		dest[i*2] = __PKHBT(__SSAT((acc0_i >> 15), 16), __SSAT((acc0_q >> 15), 16), 16);
+		dest[i*2+1] = __PKHBT(__SSAT((acc1_i >> 15), 16), __SSAT((acc1_q >> 15), 16), 16);
 		in_i++;
 		in_q++;
 	}
@@ -390,7 +396,7 @@ struct {
 void fm_demod()
 {
 	uint32_t *src = (uint32_t *)DEMOD_BUFFER;
-	int16_t *dest = (int16_t *)AUDIO_BUFFER;
+	int16_t *dest = (int16_t *)RESAMPLE_BUFFER;
 	int32_t length = DEMOD_BUFFER_SIZE / sizeof(uint32_t);
 	int i;
 
@@ -409,31 +415,27 @@ void fm_demod()
 #define RESAMPLE_NUM_TAPS	128
 
 q15_t resample_fir_coeff_even[RESAMPLE_NUM_TAPS] = {
-		  0,    0,    1,    2,    3,    4,    6,    7,    9,   11,   12,
-		 14,   15,   17,   18,   18,   18,   17,   15,   13,    9,    4,
-		 -1,   -7,  -15,  -24,  -33,  -43,  -53,  -63,  -73,  -82,  -90,
-		-96, -100, -102, -101,  -97,  -89,  -78,  -62,  -42,  -18,    9,
-		 42,   79,  120,  163,  210,  259,  310,  362,  414,  465,  515,
-		563,  608,  649,  686,  717,  743,  763,  777,  784,  784,  777,
-		763,  743,  717,  686,  649,  608,  563,  515,  465,  414,  362,
-		310,  259,  210,  163,  120,   79,   42,    9,  -18,  -42,  -62,
-		-78,  -89,  -97, -101, -102, -100,  -96,  -90,  -82,  -73,  -63,
-		-53,  -43,  -33,  -24,  -15,   -7,   -1,    4,    9,   13,   15,
-		 17,   18,   18,   18,   17,   15,   14,   12,   11,    9,    7,
-		  6,    4,    3,    2,    1,    0,    0};
+		  0,   0,   0,  -1,  -2,  -3,  -4,  -5,  -6,  -8, -10, -12, -14,
+		       -16, -18, -21, -23, -26, -28, -30, -32, -33, -35, -35, -35, -34,
+		       -33, -31, -27, -23, -17, -10,  -2,   7,  18,  30,  44,  59,  75,
+		        93, 112, 132, 153, 175, 197, 220, 244, 268, 291, 315, 338, 361,
+		       383, 404, 424, 442, 459, 474, 487, 498, 508, 514, 519, 521, 521,
+		       519, 514, 508, 498, 487, 474, 459, 442, 424, 404, 383, 361, 338,
+		       315, 291, 268, 244, 220, 197, 175, 153, 132, 112,  93,  75,  59,
+		        44,  30,  18,   7,  -2, -10, -17, -23, -27, -31, -33, -34, -35,
+		       -35, -35, -33, -32, -30, -28, -26, -23, -21, -18, -16, -14, -12,
+		       -10,  -8,  -6,  -5,  -4,  -3,  -2,  -1,   0,   0,   0};
 q15_t resample_fir_coeff_odd[RESAMPLE_NUM_TAPS] = {
-		  0,    0,    1,    2,    4,    5,    6,    8,   10,   12,   13,
-		 15,   16,   17,   18,   18,   17,   16,   14,   11,    7,    1,
-		 -4,  -11,  -19,  -28,  -38,  -48,  -58,  -68,  -77,  -86,  -93,
-		-98, -101, -102, -100,  -94,  -84,  -70,  -53,  -31,   -4,   25,
-		 60,   99,  141,  187,  235,  285,  336,  388,  440,  490,  539,
-		586,  629,  668,  702,  731,  754,  771,  781,  784,  781,  771,
-		754,  731,  702,  668,  629,  586,  539,  490,  440,  388,  336,
-		285,  235,  187,  141,   99,   60,   25,   -4,  -31,  -53,  -70,
-		-84,  -94, -100, -102, -101,  -98,  -93,  -86,  -77,  -68,  -58,
-		-48,  -38,  -28,  -19,  -11,   -4,    1,    7,   11,   14,   16,
-		 17,   18,   18,   17,   16,   15,   13,   12,   10,    8,    6,
-		  5,    4,    2,    1,    0,    0,    0};
+		  0,   0,  -1,  -1,  -2,  -3,  -4,  -6,  -7,  -9, -11, -13, -15,
+		       -17, -20, -22, -24, -27, -29, -31, -33, -34, -35, -35, -35, -34,
+		       -32, -29, -25, -20, -14,  -6,   2,  12,  24,  37,  51,  67,  84,
+		       102, 122, 142, 164, 186, 209, 232, 256, 280, 303, 327, 350, 372,
+		       394, 414, 433, 451, 467, 481, 493, 503, 511, 517, 521, 522, 521,
+		       517, 511, 503, 493, 481, 467, 451, 433, 414, 394, 372, 350, 327,
+		       303, 280, 256, 232, 209, 186, 164, 142, 122, 102,  84,  67,  51,
+		        37,  24,  12,   2,  -6, -14, -20, -25, -29, -32, -34, -35, -35,
+		       -35, -34, -33, -31, -29, -27, -24, -22, -20, -17, -15, -13, -11,
+		        -9,  -7,  -6,  -4,  -3,  -2,  -1,  -1,   0,   0};
 
 // 312.5kHz * 2/13 -> 48.076923kHz
 
@@ -442,11 +444,51 @@ struct {
 	int current;
 } resample_state;
 
+void resample_fir_filter2()
+{
+	const uint32_t *coeff;
+	const uint16_t *src = (const uint16_t *)RESAMPLE_STATE;
+	const uint32_t *s;
+	int32_t tail = RESAMPLE_BUFFER_SIZE;
+	int idx = resample_state.index;
+	int32_t acc;
+	int i, j;
+	int cur = resample_state.current;
+	uint16_t *dest = (uint16_t *)AUDIO_BUFFER;
+
+	while (idx < tail) {
+		if (idx & 0x1)
+			coeff = (uint32_t*)resample_fir_coeff_odd;
+		else
+			coeff = (uint32_t*)resample_fir_coeff_even;
+
+		acc = 0;
+		s = (const uint32_t*)&src[idx >> 1];
+		for (j = 0; j < RESAMPLE_NUM_TAPS / 2; j++) {
+			acc = __SMLAD(*s++, *coeff++, acc);
+		}
+		dest[cur++] = __SSAT((acc >> 15), 16);
+		cur %= AUDIO_BUFFER_SIZE / 2;
+		//dest[cur++] = __PKHBT(__SSAT((acc0 >> 15), 16), __SSAT((acc1 >> 15), 16), 16);
+		idx += 13;
+	}
+
+	resample_state.current = cur;
+	resample_state.index = idx - tail;
+	uint32_t *state = (uint32_t *)RESAMPLE_STATE;
+	src = &src[tail / sizeof(*src)];
+	for (i = 0; i < RESAMPLE_STATE_SIZE / sizeof(uint32_t); i++) {
+		//*state++ = *src++;
+	    __asm__ volatile ("ldr r0, [%0], #+4\n" : : "r" (src) : "r0");
+	    __asm__ volatile ("str r0, [%0], #+4\n" : : "r" (state));
+	}
+}
+#if 0
 void resample_fir_filter()
 {
 	const uint32_t *coeff;
-	const uint32_t *src = (const uint32_t *)DEMOD_STATE;
-	int32_t tail = DEMOD_BUFFER_SIZE;
+	const uint32_t *src = (const uint32_t *)RESAMPLE_STATE;
+	int32_t tail = RESAMPLE_BUFFER_SIZE;
 	int idx = resample_state.index;
 	uint32_t acc;
 	uint32_t x0, c0, x1, x2;
@@ -499,15 +541,15 @@ void resample_fir_filter()
 
 	resample_state.current = cur;
 	resample_state.index = idx - tail;
-	uint32_t *state = (uint32_t *)DEMOD_STATE;
+	uint32_t *state = (uint32_t *)RESAMPLE_STATE;
 	src = &src[tail / sizeof(*src)];
-	for (i = 0; i < DEMOD_STATE_SIZE / sizeof(uint32_t); i++) {
+	for (i = 0; i < RESAMPLE_STATE_SIZE / sizeof(uint32_t); i++) {
 		//*state++ = *src++;
 	    __asm__ volatile ("ldr r0, [%0], #+4\n" : : "r" (src) : "r0");
 	    __asm__ volatile ("str r0, [%0], #+4\n" : : "r" (state));
 	}
 }
-
+#endif
 
 void DMA_IRQHandler (void)
 {
@@ -538,7 +580,7 @@ void DMA_IRQHandler (void)
     }
 	fir_filter_iq();
 	fm_demod();
-	resample_fir_filter();
+	resample_fir_filter2();
     CLR_MEAS_PIN_3();
     capture_count ++;
   }
@@ -757,9 +799,7 @@ int main(void) {
     setup_pll0audio(PLL0_MSEL, PLL0_NSEL, PLL0_PSEL);
     priorityConfig();
 
-    int32_t x = __SMUSD(0xe7acf59f, 0xdefe32f8);
-
-    printf("Hello World: %x\n", x);
+    printf("Hello World\n");
     GPIO_SetDir(0,1<<8, 1);
 	GPIO_ClearValue(0,1<<8);
 
@@ -788,18 +828,21 @@ int main(void) {
 
     while(1) {
         //i++ ;
-        if ((capture_count / 1024) % 2) {
+        if ((capture_count % 2048) == 2047) {
         	//int i;
         	LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
-            //int length = CAPTUREBUFFER_SIZE / 2;
+            printf("%d\n", resample_state.current);
+        	GPIO_SetValue(0,1<<8);
+
+        	//int length = CAPTUREBUFFER_SIZE / 2;
         	//memset(DEST_BUFFER, 0, DEST_BUFFER_SIZE);
             //cic_decimate(&cic1, CAPTUREBUFFER, length);
 
-        	GPIO_SetValue(0,1<<8);
-        	SET_MEAS_PIN_3();
-        	fir_filter_iq();
-        	fm_demod();
-        	resample_fir_filter();
+        	//GPIO_SetValue(0,1<<8);
+        	//SET_MEAS_PIN_3();
+        	//fir_filter_iq();
+        	//fm_demod();
+        	resample_fir_filter2();
 #if 0
     		q15_t *src = I_DEST_BUFFER;
     		q15_t *dst = I_FIR_BUFFER;
@@ -809,9 +852,7 @@ int main(void) {
         		dst += FIR_BLOCK_SIZE;
         	}
 #endif
-        	CLR_MEAS_PIN_3();
-        	GPIO_SetValue(0,1<<8);
-
+        	//CLR_MEAS_PIN_3();
         } else
         	GPIO_ClearValue(0,1<<8);
         //if ((i & 0x1fffff) == 0x100000)
