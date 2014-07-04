@@ -142,6 +142,8 @@ int32_t capture_count;
 
 #define DECIMATE			32
 
+#define INTERMEDIATE_SAMPLE_RATE	312500000
+
 #define I_FIR_STATE			((q15_t*)0x10080000)
 #define I_FIR_BUFFER		((q15_t*)0x10080040)
 #define Q_FIR_STATE			((q15_t*)0x10084040)
@@ -160,6 +162,9 @@ int32_t capture_count;
 #define RESAMPLE_STATE_SIZE	0x100
 #define RESAMPLE_BUFFER 	((q15_t*)0x10089100)
 #define RESAMPLE_BUFFER_SIZE 0x400
+
+#define AUDIO_SAMPLE_RATE	48000
+
 #define AUDIO_BUFFER 		((q15_t*)0x1008A000)
 #define AUDIO_BUFFER_SIZE	0x2000
 #define AUDIO_BUFFER2 		((q15_t*)0x1008C000)
@@ -444,6 +449,9 @@ q15_t resample_fir_coeff_odd[RESAMPLE_NUM_TAPS] = {
 
 struct {
 	int index;
+	float deemphasis_mult;
+	float deemphasis_rest;
+	float deemphasis_value;
 } resample_state;
 
 struct {
@@ -452,6 +460,14 @@ struct {
 	int read_total;
 	int read_current;
 } audio_state;
+
+void
+deemphasis_init(int timeconst_us)
+{
+	resample_state.deemphasis_value = 0;
+	resample_state.deemphasis_mult = exp(-1e6/(timeconst_us * AUDIO_SAMPLE_RATE));
+	resample_state.deemphasis_rest = 1 - resample_state.deemphasis_mult;
+}
 
 void resample_fir_filter2()
 {
@@ -464,6 +480,7 @@ void resample_fir_filter2()
 	int i, j;
 	int cur = audio_state.write_current;
 	uint16_t *dest = (uint16_t *)AUDIO_BUFFER;
+	float value = resample_state.deemphasis_value;
 
 	while (idx < tail) {
 		if (idx & 0x1)
@@ -476,14 +493,16 @@ void resample_fir_filter2()
 		for (j = 0; j < RESAMPLE_NUM_TAPS / 2; j++) {
 			acc = __SMLAD(*s++, *coeff++, acc);
 		}
-		dest[cur++] = __SSAT((acc >> 12), 16);
+
+		value = (float)acc * resample_state.deemphasis_rest + value * resample_state.deemphasis_mult;
+		dest[cur++] = __SSAT(((int32_t)value >> 12), 16);
 		cur %= AUDIO_BUFFER_SIZE / 2;
 		audio_state.write_total++;
 		//dest[cur++] = __PKHBT(__SSAT((acc0 >> 15), 16), __SSAT((acc1 >> 15), 16), 16);
 		idx += 13;
 		//idx += 59;
 	}
-
+	resample_state.deemphasis_value = value;
 	audio_state.write_current = cur;
 	resample_state.index = idx - tail;
 	uint32_t *state = (uint32_t *)RESAMPLE_STATE;
@@ -799,6 +818,8 @@ static void priorityConfig()
   // High - Copying of samples
   NVIC_SetPriority(DMA_IRQn,   ((0x01<<3)|0x01));
 
+  NVIC_SetPriority(I2S0_IRQn,  ((0x02<<3)|0x01));
+
   // Low - Communication
   NVIC_SetPriority(USB0_IRQn, ((0x03<<3)|0x01));
   NVIC_SetPriority(USB1_IRQn, ((0x03<<3)|0x01));
@@ -953,6 +974,7 @@ int main(void) {
 	memset(&cic_i, 0, sizeof cic_i);
 	memset(&cic_q, 0, sizeof cic_q);
 	//arm_fir_init_q15(&fir, FIR_NUM_TAPS, fir_coeff, fir_state, FIR_BLOCK_SIZE);
+	deemphasis_init(75);
 
 	ConfigureTLV320(48000);
 
@@ -977,7 +999,7 @@ int main(void) {
         if ((capture_count % 2048) == 2047) {
         	//int i;
 //        	LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
-            printf("write:%d read:%d\n", audio_state.write_total, audio_state.read_total);
+            //printf("write:%d read:%d\n", audio_state.write_total, audio_state.read_total);
 //        	GPIO_SetValue(0,1<<8);
 
         	//int length = CAPTUREBUFFER_SIZE / 2;
