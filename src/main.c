@@ -162,6 +162,7 @@ int32_t capture_count;
 #define RESAMPLE_BUFFER_SIZE 0x400
 #define AUDIO_BUFFER 		((q15_t*)0x1008A000)
 #define AUDIO_BUFFER_SIZE	0x2000
+#define AUDIO_BUFFER2 		((q15_t*)0x1008C000)
 
 
 
@@ -475,11 +476,12 @@ void resample_fir_filter2()
 		for (j = 0; j < RESAMPLE_NUM_TAPS / 2; j++) {
 			acc = __SMLAD(*s++, *coeff++, acc);
 		}
-		dest[cur++] = __SSAT((acc >> 15), 16);
+		dest[cur++] = __SSAT((acc >> 12), 16);
 		cur %= AUDIO_BUFFER_SIZE / 2;
 		audio_state.write_total++;
 		//dest[cur++] = __PKHBT(__SSAT((acc0 >> 15), 16), __SSAT((acc1 >> 15), 16), 16);
 		idx += 13;
+		//idx += 59;
 	}
 
 	audio_state.write_current = cur;
@@ -905,28 +907,27 @@ static void ConfigureTLV320(uint32_t rate)
     I2S_IRQConfig(LPC_I2S0, I2S_TX_MODE, 4);
     I2S_IRQCmd(LPC_I2S0, I2S_TX_MODE, ENABLE);
     I2S_Start(LPC_I2S0);
-//    NVIC_EnableIRQ(I2S0_IRQn);
+    NVIC_EnableIRQ(I2S0_IRQn);
 }
 
 void I2S0_IRQHandler()
 {
-#if 0
-	uint32_t i, txLevel;
-    txLevel = I2S_GetLevel(LPC_I2S0, I2S_TX_MODE);
-    if (txLevel <= 4)
-    {
-        // Fill the remaining FIFO
-        for (i = 0; i < (8 - txLevel); i++)
-        {
-            LPC_I2S0->TXFIFO = *(uint32_t *)(i2s_buffer + i2s_sentCount);
-
-            i2s_sentCount += 4;
-            if (i2s_sentCount >= i2s_count)
-            {
-                i2s_sentCount = 0;  // start again
-            }
-        }
-    }
+#if 1
+	uint32_t txLevel = I2S_GetLevel(LPC_I2S0, I2S_TX_MODE);
+	int rest = audio_state.write_total - audio_state.read_total;
+	if (txLevel <= 4) {
+		// Fill the remaining FIFO
+		int cur = audio_state.read_current;
+		int16_t *buffer = (int16_t*)AUDIO_BUFFER;
+		int i;
+		for (i = 0; i < (8 - txLevel); i++) {
+			LPC_I2S0->TXFIFO = *(uint32_t *)&buffer[cur];
+			cur += 2;
+			cur %= AUDIO_BUFFER_SIZE / 2;
+			audio_state.read_total += 2;
+		}
+		audio_state.read_current = cur;
+	}
 #endif
 }
 
@@ -964,13 +965,20 @@ int main(void) {
 	VADC_Start();
     //volatile static int i = 0 ;
 
+	int i;
+	int16_t *buf = (int16_t*)AUDIO_BUFFER2;
+	for (i = 0; i < 0x1000; i++) {
+		float res = arm_sin_f32((float)i * 2 * PI * 440 / 48000);
+		buf[i] = (int)(res * 20000.0);
+	}
+
     while(1) {
         //i++ ;
         if ((capture_count % 2048) == 2047) {
         	//int i;
 //        	LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
             printf("write:%d read:%d\n", audio_state.write_total, audio_state.read_total);
-        	GPIO_SetValue(0,1<<8);
+//        	GPIO_SetValue(0,1<<8);
 
         	//int length = CAPTUREBUFFER_SIZE / 2;
         	//memset(DEST_BUFFER, 0, DEST_BUFFER_SIZE);
@@ -991,25 +999,29 @@ int main(void) {
         	}
 #endif
         	//CLR_MEAS_PIN_3();
-        } else
+        } else if ((capture_count % 2048) < 1024) {
+        	GPIO_SetValue(0,1<<8);
+    	} else
         	GPIO_ClearValue(0,1<<8);
         //if ((i & 0x1fffff) == 0x100000)
         //	printf("%d\n", i);
-#if 1
+#if 0
         {
         	uint32_t txLevel = I2S_GetLevel(LPC_I2S0, I2S_TX_MODE);
         	int rest = audio_state.write_total - audio_state.read_total;
-        	if (txLevel <= 4 && rest > 8) {
+        	if (txLevel <= 4) {
         		// Fill the remaining FIFO
         		int cur = audio_state.read_current;
-        		int16_t *buffer = (int16_t*)AUDIO_BUFFER;
+        		int16_t *buffer = (int16_t*)AUDIO_BUFFER2;
+        		//int16_t *buffer = (int16_t*)AUDIO_BUFFER;
         		int i;
         		for (i = 0; i < (8 - txLevel); i++) {
-        			LPC_I2S0->TXFIFO = *(uint32_t *)&buffer[cur*2];
-        			cur++;
+        			LPC_I2S0->TXFIFO = *(uint32_t *)&buffer[cur];
+        			cur += 2;
         			cur %= AUDIO_BUFFER_SIZE / 2;
         			audio_state.read_total += 2;
         		}
+        		audio_state.read_current = cur;
             }
         }
 #endif
