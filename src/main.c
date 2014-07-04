@@ -18,6 +18,8 @@
 #include <lpc43xx_gpdma.h>
 #include <lpc43xx_scu.h>
 #include <lpc43xx_rgu.h>
+#include "lpc43xx_i2s.h"
+#include "lpc43xx_i2c.h"
 
 #include <cr_section_macros.h>
 
@@ -441,8 +443,14 @@ q15_t resample_fir_coeff_odd[RESAMPLE_NUM_TAPS] = {
 
 struct {
 	int index;
-	int current;
 } resample_state;
+
+struct {
+	int write_current;
+	int write_total;
+	int read_total;
+	int read_current;
+} audio_state;
 
 void resample_fir_filter2()
 {
@@ -453,7 +461,7 @@ void resample_fir_filter2()
 	int idx = resample_state.index;
 	int32_t acc;
 	int i, j;
-	int cur = resample_state.current;
+	int cur = audio_state.write_current;
 	uint16_t *dest = (uint16_t *)AUDIO_BUFFER;
 
 	while (idx < tail) {
@@ -469,11 +477,12 @@ void resample_fir_filter2()
 		}
 		dest[cur++] = __SSAT((acc >> 15), 16);
 		cur %= AUDIO_BUFFER_SIZE / 2;
+		audio_state.write_total++;
 		//dest[cur++] = __PKHBT(__SSAT((acc0 >> 15), 16), __SSAT((acc1 >> 15), 16), 16);
 		idx += 13;
 	}
 
-	resample_state.current = cur;
+	audio_state.write_current = cur;
 	resample_state.index = idx - tail;
 	uint32_t *state = (uint32_t *)RESAMPLE_STATE;
 	src = &src[tail / sizeof(*src)];
@@ -794,6 +803,133 @@ static void priorityConfig()
   NVIC_SetPriority(I2C0_IRQn, ((0x03<<3)|0x01));
 }
 
+
+static int I2CWrite(uint8_t addr, uint8_t data0, uint8_t data1)
+{
+	I2C_M_SETUP_Type txsetup;
+	uint8_t buf[2];
+	txsetup.sl_addr7bit = addr;
+	txsetup.tx_data = buf;
+	txsetup.tx_length = sizeof buf;
+	txsetup.rx_data = NULL;
+	txsetup.rx_length = 0;
+	txsetup.retransmissions_max = 3;
+	buf[0] = data0;
+	buf[1] = data1;
+	if (I2C_MasterTransferData(LPC_I2C0, &txsetup, I2C_TRANSFER_POLLING) == SUCCESS){
+		return (0);
+	} else {
+		return (-1);
+	}
+}
+
+static void ConfigureTLV320(uint32_t rate)
+{
+    I2S_CFG_Type i2sCfg;
+    I2S_MODEConf_Type i2sMode;
+
+	// Initialize I2C peripheral
+	I2C_Init(LPC_I2C0, 100000);
+
+    /* Enable I2C0 operation */
+	I2C_Cmd(LPC_I2C0, ENABLE);
+	I2CWrite(0x18, 0x00, 0x00); /* Initialize to Page 0 */
+	I2CWrite(0x18, 0x01, 0x01); /* Initialize the device through software reset */
+	I2CWrite(0x18, 0x05, 0x91); /* Power up PLL, P=1,R=1 */
+	I2CWrite(0x18, 0x06, 0x07); /* J=7 */
+	I2CWrite(0x18, 0x07, 6);    /* D=(6 <<8) + 144 */
+	I2CWrite(0x18, 0x08, 144);
+	I2CWrite(0x18, 0x0b, 0x82); /* Power up the NDAC divider with value 2 */
+	I2CWrite(0x18, 0x0c, 0x87); /* Power up the MDAC divider with value 7 */
+	I2CWrite(0x18, 0x0d, 0x00); /* Program the OSR of DAC to 128 */
+	I2CWrite(0x18, 0x0e, 0x80);
+	I2CWrite(0x18, 0x3c, 0x08); /* Set the DAC Mode to PRB_P8 */
+	I2CWrite(0x18, 0x25, 0xee); /* DAC power up */
+	I2CWrite(0x18, 0x00, 0x01); /* Select Page 1 */
+	I2CWrite(0x18, 0x01, 0x08); /* Disable Internal Crude AVdd in presence of external AVdd supply or before powering up internal AVdd LDO*/
+	I2CWrite(0x18, 0x02, 0x01); /* Enable Master Analog Power Control */
+	I2CWrite(0x18, 0x7b, 0x01); /* Set the REF charging time to 40ms */
+	I2CWrite(0x18, 0x14, 0x25); /* HP soft stepping settings for optimal pop performance at power up Rpop used is 6k with N = 6 and soft step = 20usec. This should work with 47uF coupling capacitor. Can try N=5,6 or 7 time constants as well. Trade-off delay vs “pop” sound. */
+	I2CWrite(0x18, 0x0a, 0x00); /* Set the Input Common Mode to 0.9V and Output Common Mode for Headphone to Input Common Mode */
+	I2CWrite(0x18, 0x0c, 0x08); /* Route Left DAC to HPL */
+	I2CWrite(0x18, 0x0d, 0x08); /* Route Right DAC to HPR */
+	I2CWrite(0x18, 0x03, 0x00); /* Set the DAC PTM mode to PTM_P3/4 */
+	I2CWrite(0x18, 0x04, 0x00);
+	I2CWrite(0x18, 0x10, 0x00); /* Set the HPL gain to 0dB */
+	I2CWrite(0x18, 0x11, 0x00); /* Set the HPR gain to 0dB */
+	I2CWrite(0x18, 0x09, 0x30); /* Power up HPL and HPR drivers */
+	I2CWrite(0x18, 0x00, 0x00); /* Select Page 0 */
+	I2CWrite(0x18, 0x3f, 0xd6); /* Power up the Left and Right DAC Channels with route the Left Audio digital data to Left Channel DAC and Right Audio digital data to Right Channel DAC */
+	I2CWrite(0x18, 0x40, 0x00); /* Unmute the DAC digital volume control */
+
+    // Configure I2S pins
+    scu_pinmux(0x3, 0, MD_PLN_FAST, FUNC2);     // SCK
+    //scu_pinmux(0x3, 0, MD_PLN_FAST, FUNC3);     // MCLK
+    //scu_pinmux(0xC, 12, MD_PLN_FAST, FUNC6);    // SD
+/**/scu_pinmux(0x3, 1, MD_PLN_FAST, FUNC0);     // WS
+/**/scu_pinmux(0x3, 2, MD_PLN_FAST, FUNC0);    // SD
+    scu_pinmux(0x3, 4, MD_PLN_FAST, FUNC5);     // WS
+    scu_pinmux(0xF, 4, MD_PLN_FAST, FUNC6);    // MCLK
+
+	// output clock to TP_CLK0 for diagnosis
+	//LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_IRC << 24;
+	LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_XTAL_OSC << 24;
+	//LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_PLL0_AUDIO << 24;
+	LPC_SCU->SFSCLK_0 = 0x1;
+
+    // Initialize I2S
+    I2S_Init(LPC_I2S0);
+
+    // Configure I2S
+    i2sCfg.wordwidth = I2S_WORDWIDTH_16;
+    i2sCfg.mono      = I2S_MONO;
+    i2sCfg.stop      = I2S_STOP_ENABLE;
+    i2sCfg.reset     = I2S_RESET_ENABLE;
+    i2sCfg.ws_sel    = I2S_MASTER_MODE;
+    i2sCfg.mute      = I2S_MUTE_DISABLE;
+    I2S_Config(LPC_I2S0, I2S_TX_MODE, &i2sCfg);
+
+    // Configure operating mode
+    i2sMode.clksel = I2S_CLKSEL_FRDCLK;
+    i2sMode.fpin   = I2S_4PIN_DISABLE;
+    //i2sMode.mcena  = I2S_MCLK_DISABLE;
+    i2sMode.mcena  = I2S_MCLK_ENABLE;
+    I2S_ModeConfig(LPC_I2S0, &i2sMode, I2S_TX_MODE);
+
+    // Configure sampling frequency
+    I2S_FreqConfig(LPC_I2S0, rate, I2S_TX_MODE);
+    //FreqConfig(LPC_I2S0, rate, I2S_TX_MODE);
+
+    I2S_Stop(LPC_I2S0, I2S_TX_MODE);
+
+    I2S_IRQConfig(LPC_I2S0, I2S_TX_MODE, 4);
+    I2S_IRQCmd(LPC_I2S0, I2S_TX_MODE, ENABLE);
+    I2S_Start(LPC_I2S0);
+//    NVIC_EnableIRQ(I2S0_IRQn);
+}
+
+void I2S0_IRQHandler()
+{
+#if 0
+	uint32_t i, txLevel;
+    txLevel = I2S_GetLevel(LPC_I2S0, I2S_TX_MODE);
+    if (txLevel <= 4)
+    {
+        // Fill the remaining FIFO
+        for (i = 0; i < (8 - txLevel); i++)
+        {
+            LPC_I2S0->TXFIFO = *(uint32_t *)(i2s_buffer + i2s_sentCount);
+
+            i2s_sentCount += 4;
+            if (i2s_sentCount >= i2s_count)
+            {
+                i2s_sentCount = 0;  // start again
+            }
+        }
+    }
+#endif
+}
+
 int main(void) {
 	setup_systemclock();
     setup_pll0audio(PLL0_MSEL, PLL0_NSEL, PLL0_PSEL);
@@ -817,6 +953,8 @@ int main(void) {
 	memset(&cic_q, 0, sizeof cic_q);
 	//arm_fir_init_q15(&fir, FIR_NUM_TAPS, fir_coeff, fir_state, FIR_BLOCK_SIZE);
 
+	ConfigureTLV320(48000);
+
 	VADC_Init();
 
 	/* wait 5 msec */
@@ -830,8 +968,8 @@ int main(void) {
         //i++ ;
         if ((capture_count % 2048) == 2047) {
         	//int i;
-        	LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
-            printf("%d\n", resample_state.current);
+//        	LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
+            printf("write:%d read:%d\n", audio_state.write_total, audio_state.read_total);
         	GPIO_SetValue(0,1<<8);
 
         	//int length = CAPTUREBUFFER_SIZE / 2;
@@ -842,7 +980,7 @@ int main(void) {
         	//SET_MEAS_PIN_3();
         	//fir_filter_iq();
         	//fm_demod();
-        	resample_fir_filter2();
+//        	resample_fir_filter2();
 #if 0
     		q15_t *src = I_DEST_BUFFER;
     		q15_t *dst = I_FIR_BUFFER;
@@ -857,6 +995,24 @@ int main(void) {
         	GPIO_ClearValue(0,1<<8);
         //if ((i & 0x1fffff) == 0x100000)
         //	printf("%d\n", i);
+#if 1
+        {
+        	uint32_t txLevel = I2S_GetLevel(LPC_I2S0, I2S_TX_MODE);
+        	int rest = audio_state.write_total - audio_state.read_total;
+        	if (txLevel <= 4 && rest > 8) {
+        		// Fill the remaining FIFO
+        		int cur = audio_state.read_current;
+        		int16_t *buffer = (int16_t*)AUDIO_BUFFER;
+        		int i;
+        		for (i = 0; i < (8 - txLevel); i++) {
+        			LPC_I2S0->TXFIFO = *(uint32_t *)&buffer[cur*2];
+        			cur++;
+        			cur %= AUDIO_BUFFER_SIZE / 2;
+        			audio_state.read_total += 2;
+        		}
+            }
+        }
+#endif
     }
 	VADC_Stop();
     return 0 ;
