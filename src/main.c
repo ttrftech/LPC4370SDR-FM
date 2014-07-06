@@ -137,7 +137,10 @@ int32_t capture_count;
 #define NCO_COS_BUFFER		((uint8_t*)0x1008F800)
 #define NCO_BUFFER_SIZE		0x800
 #define NCO_SAMPLES			1024
-#define NCO_AMPL			(SHRT_MAX / 16)
+#define NCO_AMPL			(SHRT_MAX / 128)
+//#define NCO_AMPL			(SHRT_MAX / 64)
+//#define NCO_AMPL			(SHRT_MAX / 32)
+//#define NCO_AMPL			(SHRT_MAX / 16)
 //#define NCO_AMPL			(SHRT_MAX / 4)
 
 #define DECIMATE			32
@@ -423,27 +426,31 @@ void fm_demod()
 #define RESAMPLE_NUM_TAPS	128
 
 q15_t resample_fir_coeff_even[RESAMPLE_NUM_TAPS] = {
-		  0,   0,   0,  -1,  -2,  -3,  -4,  -5,  -6,  -8, -10, -12, -14,
-		       -16, -18, -21, -23, -26, -28, -30, -32, -33, -35, -35, -35, -34,
-		       -33, -31, -27, -23, -17, -10,  -2,   7,  18,  30,  44,  59,  75,
-		        93, 112, 132, 153, 175, 197, 220, 244, 268, 291, 315, 338, 361,
-		       383, 404, 424, 442, 459, 474, 487, 498, 508, 514, 519, 521, 521,
-		       519, 514, 508, 498, 487, 474, 459, 442, 424, 404, 383, 361, 338,
-		       315, 291, 268, 244, 220, 197, 175, 153, 132, 112,  93,  75,  59,
-		        44,  30,  18,   7,  -2, -10, -17, -23, -27, -31, -33, -34, -35,
-		       -35, -35, -33, -32, -30, -28, -26, -23, -21, -18, -16, -14, -12,
-		       -10,  -8,  -6,  -5,  -4,  -3,  -2,  -1,   0,   0,   0};
+		   0,    0,    1,    2,    3,    4,    6,    7,    9,   11,   12,
+		         14,   15,   17,   18,   18,   18,   17,   15,   13,    9,    4,
+		         -1,   -7,  -15,  -24,  -33,  -43,  -53,  -63,  -73,  -82,  -90,
+		        -96, -100, -102, -101,  -97,  -89,  -78,  -62,  -42,  -18,    9,
+		         42,   79,  120,  163,  210,  259,  310,  362,  414,  465,  515,
+		        563,  608,  649,  686,  717,  743,  763,  777,  784,  784,  777,
+		        763,  743,  717,  686,  649,  608,  563,  515,  465,  414,  362,
+		        310,  259,  210,  163,  120,   79,   42,    9,  -18,  -42,  -62,
+		        -78,  -89,  -97, -101, -102, -100,  -96,  -90,  -82,  -73,  -63,
+		        -53,  -43,  -33,  -24,  -15,   -7,   -1,    4,    9,   13,   15,
+		         17,   18,   18,   18,   17,   15,   14,   12,   11,    9,    7,
+		          6,    4,    3,    2,    1,    0,    0};
 q15_t resample_fir_coeff_odd[RESAMPLE_NUM_TAPS] = {
-		  0,   0,  -1,  -1,  -2,  -3,  -4,  -6,  -7,  -9, -11, -13, -15,
-		       -17, -20, -22, -24, -27, -29, -31, -33, -34, -35, -35, -35, -34,
-		       -32, -29, -25, -20, -14,  -6,   2,  12,  24,  37,  51,  67,  84,
-		       102, 122, 142, 164, 186, 209, 232, 256, 280, 303, 327, 350, 372,
-		       394, 414, 433, 451, 467, 481, 493, 503, 511, 517, 521, 522, 521,
-		       517, 511, 503, 493, 481, 467, 451, 433, 414, 394, 372, 350, 327,
-		       303, 280, 256, 232, 209, 186, 164, 142, 122, 102,  84,  67,  51,
-		        37,  24,  12,   2,  -6, -14, -20, -25, -29, -32, -34, -35, -35,
-		       -35, -34, -33, -31, -29, -27, -24, -22, -20, -17, -15, -13, -11,
-		        -9,  -7,  -6,  -4,  -3,  -2,  -1,  -1,   0,   0};
+		   0,    0,    1,    2,    4,    5,    6,    8,   10,   12,   13,
+		         15,   16,   17,   18,   18,   17,   16,   14,   11,    7,    1,
+		         -4,  -11,  -19,  -28,  -38,  -48,  -58,  -68,  -77,  -86,  -93,
+		        -98, -101, -102, -100,  -94,  -84,  -70,  -53,  -31,   -4,   25,
+		         60,   99,  141,  187,  235,  285,  336,  388,  440,  490,  539,
+		        586,  629,  668,  702,  731,  754,  771,  781,  784,  781,  771,
+		        754,  731,  702,  668,  629,  586,  539,  490,  440,  388,  336,
+		        285,  235,  187,  141,   99,   60,   25,   -4,  -31,  -53,  -70,
+		        -84,  -94, -100, -102, -101,  -98,  -93,  -86,  -77,  -68,  -58,
+		        -48,  -38,  -28,  -19,  -11,   -4,    1,    7,   11,   14,   16,
+		         17,   18,   18,   17,   16,   15,   13,   12,   10,    8,    6,
+		          5,    4,    2,    1,    0,    0,    0};
 
 // 312.5kHz * 2/13 -> 48.076923kHz
 
@@ -500,7 +507,6 @@ void resample_fir_filter2()
 		audio_state.write_total++;
 		//dest[cur++] = __PKHBT(__SSAT((acc0 >> 15), 16), __SSAT((acc1 >> 15), 16), 16);
 		idx += 13;
-		//idx += 59;
 	}
 	resample_state.deemphasis_value = value;
 	audio_state.write_current = cur;
@@ -795,12 +801,13 @@ static void VADC_Start(void)
 
 static void VADC_Stop(void)
 {
+  NVIC_DisableIRQ(I2S0_IRQn);
   NVIC_DisableIRQ(DMA_IRQn);
-  NVIC_DisableIRQ(VADC_IRQn);
+  //NVIC_DisableIRQ(VADC_IRQn);
 
   // disable DMA
   LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
-/*
+
   // power down VADC
   LPC_VADC->POWER_CONTROL = 0;
 
@@ -809,8 +816,7 @@ static void VADC_Stop(void)
 
   // Reset the VADC block
   RGU_SoftReset(RGU_SIG_VADC);
-  while(RGU_GetSignalStatus(RGU_SIG_VADC));
-*/
+  //while(RGU_GetSignalStatus(RGU_SIG_VADC));
 }
 
 static void priorityConfig()
@@ -858,12 +864,15 @@ static void ConfigureTLV320(uint32_t rate)
 	I2C_Cmd(LPC_I2C0, ENABLE);
 	I2CWrite(0x18, 0x00, 0x00); /* Initialize to Page 0 */
 	I2CWrite(0x18, 0x01, 0x01); /* Initialize the device through software reset */
+	I2CWrite(0x18, 0x04, 0x43); /* PLL Clock High, MCLK, PLL */
 	I2CWrite(0x18, 0x05, 0x91); /* Power up PLL, P=1,R=1 */
 	I2CWrite(0x18, 0x06, 0x07); /* J=7 */
 	I2CWrite(0x18, 0x07, 6);    /* D=(6 <<8) + 144 */
 	I2CWrite(0x18, 0x08, 144);
 	I2CWrite(0x18, 0x0b, 0x82); /* Power up the NDAC divider with value 2 */
 	I2CWrite(0x18, 0x0c, 0x87); /* Power up the MDAC divider with value 7 */
+	//I2CWrite(0x18, 0x0b, 0x81); /* Power up the NDAC divider with value 2 */
+	//I2CWrite(0x18, 0x0c, 0x83); /* Power up the MDAC divider with value 7 */
 	I2CWrite(0x18, 0x0d, 0x00); /* Program the OSR of DAC to 128 */
 	I2CWrite(0x18, 0x0e, 0x80);
 	I2CWrite(0x18, 0x3c, 0x08); /* Set the DAC Mode to PRB_P8 */
@@ -942,7 +951,8 @@ void I2S0_IRQHandler()
 		int16_t *buffer = (int16_t*)AUDIO_BUFFER;
 		int i;
 		for (i = 0; i < (8 - txLevel); i++) {
-			LPC_I2S0->TXFIFO = *(uint32_t *)&buffer[cur];
+			uint32_t x = *(uint32_t *)&buffer[cur];
+			LPC_I2S0->TXFIFO = x;//__PKHTB(x, x, 0);
 			cur += 2;
 			cur %= AUDIO_BUFFER_SIZE / 2;
 			audio_state.read_total += 2;
@@ -957,6 +967,8 @@ int main(void) {
     setup_pll0audio(PLL0_MSEL, PLL0_NSEL, PLL0_PSEL);
     priorityConfig();
 
+    VADC_Stop();
+
     printf("Hello World\n");
     GPIO_SetDir(0,1<<8, 1);
 	GPIO_ClearValue(0,1<<8);
@@ -965,12 +977,13 @@ int main(void) {
 	LPC_GPIO_PORT->DIR[3] |= (1UL << 7);
 	LPC_GPIO_PORT->SET[3] |= (1UL << 7);
 
-	//ConfigureNCOTable(2500000 / 20000); // 2.5MHz
-	//ConfigureNCOTable(2500000 / 5000); // 2.5MHz
-	//ConfigureNCOTable(1000000 / 5000); // 1MHz
-	//ConfigureNCOTable(420000 / 5000); // 400kHz
-	ConfigureNCOTable(420000 / 10000); // 400kHz
 	//ConfigureNCOTable(0); // 0MHz
+	//ConfigureNCOTable(420000 / 5000); // 400kHz
+	//ConfigureNCOTable(420000 / 10000); // 400kHz
+
+	//ConfigureNCOTable(400000 / 9500); // 400kHz
+	//ConfigureNCOTable(400 * 1024 / 10000); // 400kHz
+	ConfigureNCOTable(2500000 / 9700); // 2.5MHz
 	memset(&cic_i, 0, sizeof cic_i);
 	memset(&cic_q, 0, sizeof cic_q);
 	//arm_fir_init_q15(&fir, FIR_NUM_TAPS, fir_coeff, fir_state, FIR_BLOCK_SIZE);
@@ -990,7 +1003,7 @@ int main(void) {
 	int i;
 	int16_t *buf = (int16_t*)AUDIO_BUFFER2;
 	for (i = 0; i < 0x1000; i++) {
-		float res = arm_sin_f32((float)i * 2 * PI * 440 / 48000);
+		float res = arm_sin_f32((float)i * 2 * PI * 13000 / 48000);
 		buf[i] = (int)(res * 20000.0);
 	}
 
