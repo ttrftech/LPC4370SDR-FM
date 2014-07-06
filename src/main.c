@@ -31,8 +31,6 @@
 #include "meas.h"
 
 
-// TODO: insert other include files here
-
 #define VADC_DMA_WRITE  7
 #define VADC_DMA_READ   8
 #define VADC_DMA_READ_SRC  (LPC_VADC_BASE + 512)  /* VADC FIFO */
@@ -128,8 +126,6 @@ typedef struct {                            /*!< (@ 0x400F0000) VADC Structure  
 int32_t capture_count;
 
 
-//#define CAPTUREBUFFER		((uint8_t*)0x20000000)
-//#define CAPTUREBUFFER		((uint8_t*)0x10080000)
 #define CAPTUREBUFFER		((uint8_t*)0x20000000)
 #define CAPTUREBUFFER_SIZE	0x10000
 
@@ -171,8 +167,6 @@ int32_t capture_count;
 #define AUDIO_BUFFER 		((q15_t*)0x1008A000)
 #define AUDIO_BUFFER_SIZE	0x2000
 #define AUDIO_BUFFER2 		((q15_t*)0x1008C000)
-
-
 
 
 /*
@@ -319,40 +313,6 @@ static void cic_decimate_q(CICState *cic, uint8_t *buf, int len)
 	cic->d2 = d2;
 }
 
-#if 0
-void fir_filter_i()
-{
-	const uint32_t *coeff = (uint32_t*)fir_coeff;
-	const uint32_t *in_i = (const uint32_t *)I_FIR_STATE;
-	int32_t length = FIR_BUFFER_SIZE / sizeof(uint32_t);
-	uint32_t *dest = (uint32_t *)DEMOD_BUFFER;
-	int i, j;
-
-	for (i = 0; i < length; i++) {
-		q31_t acc0_i = 0;
-		q31_t acc1_i = 0;
-		uint32_t x0 = in_i[0];
-		for (j = 0; j < FIR_NUM_TAPS / 2; ) {
-			uint32_t c0 = coeff[j];
-			uint32_t x2 = in_i[++j];
-			acc0_i = __SMLAD(x0, c0, acc0_i);
-			uint32_t x1 = __PKHBT(x2, x0, 0);
-			acc1_i = __SMLADX(x1, c0, acc1_i);
-			x0 = x2;
-		}
-		dest[i] = __PKHBT(__SSAT((acc0_i >> 15), 16), __SSAT((acc1_i >> 15), 16), 16);
-		in_i++;
-	}
-
-	uint32_t *state_i = (uint32_t *)I_FIR_STATE;
-	for (i = 0; i < FIR_STATE_SIZE / sizeof(uint32_t); i++) {
-		//*state_i++ = *in_i++;
-	    __asm__ volatile ("ldr r0, [%0], #+4\n" : : "r" (in_i) : "r0");
-	    __asm__ volatile ("str r0, [%0], #+4\n" : : "r" (state_i));
-	}
-}
-#endif
-
 void fir_filter_iq()
 {
 	const uint32_t *coeff = (uint32_t*)fir_coeff;
@@ -426,31 +386,31 @@ void fm_demod()
 #define RESAMPLE_NUM_TAPS	128
 
 q15_t resample_fir_coeff_even[RESAMPLE_NUM_TAPS] = {
-		   0,    0,    1,    2,    3,    4,    6,    7,    9,   11,   12,
-		         14,   15,   17,   18,   18,   18,   17,   15,   13,    9,    4,
-		         -1,   -7,  -15,  -24,  -33,  -43,  -53,  -63,  -73,  -82,  -90,
-		        -96, -100, -102, -101,  -97,  -89,  -78,  -62,  -42,  -18,    9,
-		         42,   79,  120,  163,  210,  259,  310,  362,  414,  465,  515,
-		        563,  608,  649,  686,  717,  743,  763,  777,  784,  784,  777,
-		        763,  743,  717,  686,  649,  608,  563,  515,  465,  414,  362,
-		        310,  259,  210,  163,  120,   79,   42,    9,  -18,  -42,  -62,
-		        -78,  -89,  -97, -101, -102, -100,  -96,  -90,  -82,  -73,  -63,
-		        -53,  -43,  -33,  -24,  -15,   -7,   -1,    4,    9,   13,   15,
-		         17,   18,   18,   18,   17,   15,   14,   12,   11,    9,    7,
-		          6,    4,    3,    2,    1,    0,    0};
+		   3,    0,   -3,   -6,   -7,   -5,   -1,    4,    9,   11,    9,
+		          3,   -5,  -14,  -19,  -17,   -8,    5,   21,   31,   30,   18,
+		         -4,  -28,  -46,  -49,  -33,   -1,   36,   66,   76,   57,   13,
+		        -42,  -91, -111,  -93,  -35,   44,  119,  160,  145,   72,  -39,
+		       -154, -228, -226, -136,   22,  200,  334,  363,  255,   23, -274,
+		       -539, -662, -550, -163,  475, 1270, 2076, 2732, 3100, 3100, 2732,
+		       2076, 1270,  475, -163, -550, -662, -539, -274,   23,  255,  363,
+		        334,  200,   22, -136, -226, -228, -154,  -39,   72,  145,  160,
+		        119,   44,  -35,  -93, -111,  -91,  -42,   13,   57,   76,   66,
+		         36,   -1,  -33,  -49,  -46,  -28,   -4,   18,   30,   31,   21,
+		          5,   -8,  -17,  -19,  -14,   -5,    3,    9,   11,    9,    4,
+		         -1,   -5,   -7,   -6,   -3,    0,    3};
 q15_t resample_fir_coeff_odd[RESAMPLE_NUM_TAPS] = {
-		   0,    0,    1,    2,    4,    5,    6,    8,   10,   12,   13,
-		         15,   16,   17,   18,   18,   17,   16,   14,   11,    7,    1,
-		         -4,  -11,  -19,  -28,  -38,  -48,  -58,  -68,  -77,  -86,  -93,
-		        -98, -101, -102, -100,  -94,  -84,  -70,  -53,  -31,   -4,   25,
-		         60,   99,  141,  187,  235,  285,  336,  388,  440,  490,  539,
-		        586,  629,  668,  702,  731,  754,  771,  781,  784,  781,  771,
-		        754,  731,  702,  668,  629,  586,  539,  490,  440,  388,  336,
-		        285,  235,  187,  141,   99,   60,   25,   -4,  -31,  -53,  -70,
-		        -84,  -94, -100, -102, -101,  -98,  -93,  -86,  -77,  -68,  -58,
-		        -48,  -38,  -28,  -19,  -11,   -4,    1,    7,   11,   14,   16,
-		         17,   18,   18,   17,   16,   15,   13,   12,   10,    8,    6,
-		          5,    4,    2,    1,    0,    0,    0};
+		   1,   -2,   -5,   -7,   -6,   -3,    1,    7,   11,   11,    7,
+		          0,  -10,  -17,  -19,  -14,   -1,   13,   27,   32,   25,    7,
+		        -16,  -39,  -50,  -44,  -19,   17,   53,   74,   70,   38,  -14,
+		        -69, -105, -107,  -68,    3,   84,  146,  160,  115,   19,  -99,
+		       -199, -238, -191,  -63,  112,  276,  364,  327,  152, -122, -417,
+		       -625, -639, -391,  129,  861, 1682, 2433, 2959, 3148, 2959, 2433,
+		       1682,  861,  129, -391, -639, -625, -417, -122,  152,  327,  364,
+		        276,  112,  -63, -191, -238, -199,  -99,   19,  115,  160,  146,
+		         84,    3,  -68, -107, -105,  -69,  -14,   38,   70,   74,   53,
+		         17,  -19,  -44,  -50,  -39,  -16,    7,   25,   32,   27,   13,
+		         -1,  -14,  -19,  -17,  -10,    0,    7,   11,   11,    7,    1,
+		         -3,   -6,   -7,   -5,   -2,    1,    0};
 
 // 312.5kHz * 2/13 -> 48.076923kHz
 
@@ -477,7 +437,7 @@ deemphasis_init(int timeconst_us)
 	resample_state.deemphasis_rest = 1 - resample_state.deemphasis_mult;
 }
 
-void resample_fir_filter2()
+void resample_fir_filter()
 {
 	const uint32_t *coeff;
 	const uint16_t *src = (const uint16_t *)RESAMPLE_STATE;
@@ -503,7 +463,7 @@ void resample_fir_filter2()
 		}
 
 		value = (float)acc * resample_state.deemphasis_rest + value * resample_state.deemphasis_mult;
-		dest[cur++] = __SSAT(((int32_t)value >> 12), 16);
+		dest[cur++] = __SSAT(((int32_t)value >> 10), 16);
 		cur %= AUDIO_BUFFER_SIZE / 2;
 		audio_state.write_total++;
 		//dest[cur++] = __PKHBT(__SSAT((acc0 >> 15), 16), __SSAT((acc1 >> 15), 16), 16);
@@ -529,73 +489,6 @@ void resample_fir_filter2()
 	    __asm__ volatile ("str r0, [%0], #+4\n" : : "r" (state));
 	}
 }
-#if 0
-void resample_fir_filter()
-{
-	const uint32_t *coeff;
-	const uint32_t *src = (const uint32_t *)RESAMPLE_STATE;
-	int32_t tail = RESAMPLE_BUFFER_SIZE;
-	int idx = resample_state.index;
-	uint32_t acc;
-	uint32_t x0, c0, x1, x2;
-	int i, j;
-	int cur = resample_state.current;
-	uint16_t *dest = (uint16_t *)AUDIO_BUFFER;
-
-	while (idx < tail) {
-		int cls = idx & 0x3;
-		i = idx >> 2;
-
-		switch (cls) {
-		case 0:
-		case 2:
-			coeff = (uint32_t*)resample_fir_coeff_even;
-			break;
-		case 1:
-		case 3:
-			coeff = (uint32_t*)resample_fir_coeff_odd;
-			break;
-		}
-
-		acc = 0;
-		switch (cls) {
-		case 0:
-		case 1:
-			for (j = 0; j < RESAMPLE_NUM_TAPS / 2; ) {
-				x0 = src[i+j];
-				c0 = coeff[j++];
-				acc = __SMLAD(x0, c0, acc);
-			}
-			break;
-		case 2:
-		case 3:
-			x0 = src[i];
-			for (j = 0; j < RESAMPLE_NUM_TAPS / 2; ) {
-				c0 = coeff[j++];
-				x2 = src[i+j];
-				x1 = __PKHBT(x2, x0, 0);
-				acc = __SMLADX(x1, c0, acc);
-				x0 = x2;
-			}
-			break;
-		}
-		dest[cur++] = __SSAT((acc >> 15), 16);
-		cur %= AUDIO_BUFFER_SIZE / 2;
-		//dest[cur++] = __PKHBT(__SSAT((acc0 >> 15), 16), __SSAT((acc1 >> 15), 16), 16);
-		idx += 13;
-	}
-
-	resample_state.current = cur;
-	resample_state.index = idx - tail;
-	uint32_t *state = (uint32_t *)RESAMPLE_STATE;
-	src = &src[tail / sizeof(*src)];
-	for (i = 0; i < RESAMPLE_STATE_SIZE / sizeof(uint32_t); i++) {
-		//*state++ = *src++;
-	    __asm__ volatile ("ldr r0, [%0], #+4\n" : : "r" (src) : "r0");
-	    __asm__ volatile ("str r0, [%0], #+4\n" : : "r" (state));
-	}
-}
-#endif
 
 void DMA_IRQHandler (void)
 {
@@ -603,8 +496,6 @@ void DMA_IRQHandler (void)
   {
     LPC_GPDMA->INTERRCLR = 1;
   }
-
-//#define MEMCPY __aeabi_memcpy8
 
   if (LPC_GPDMA->INTTCSTAT & 1)
   {
@@ -615,18 +506,15 @@ void DMA_IRQHandler (void)
     const int length = CAPTUREBUFFER_SIZE / 2;
 	SET_MEAS_PIN_3();
     if ((capture_count & 1) == 0) {
-    	//MEMCPY(DEST_BUFFER, CAPTUREBUFFER, length);
     	cic_decimate_i(&cic_i, CAPTUREBUFFER, length);
     	cic_decimate_q(&cic_q, CAPTUREBUFFER, length);
     } else {
-    	//MEMCPY(DEST_BUFFER + length, CAPTUREBUFFER + length, length);
-    	//MEMCPY(DEST_BUFFER, CAPTUREBUFFER + length, length);
     	cic_decimate_i(&cic_i, CAPTUREBUFFER + length, length);
     	cic_decimate_q(&cic_q, CAPTUREBUFFER + length, length);
     }
 	fir_filter_iq();
 	fm_demod();
-	resample_fir_filter2();
+	resample_fir_filter();
     CLR_MEAS_PIN_3();
     capture_count ++;
   }
@@ -881,8 +769,6 @@ static void ConfigureTLV320(uint32_t rate)
 	I2CWrite(0x18, 0x08, 144);
 	I2CWrite(0x18, 0x0b, 0x82); /* Power up the NDAC divider with value 2 */
 	I2CWrite(0x18, 0x0c, 0x87); /* Power up the MDAC divider with value 7 */
-	//I2CWrite(0x18, 0x0b, 0x81); /* Power up the NDAC divider with value 2 */
-	//I2CWrite(0x18, 0x0c, 0x83); /* Power up the MDAC divider with value 7 */
 	I2CWrite(0x18, 0x0d, 0x00); /* Program the OSR of DAC to 128 */
 	I2CWrite(0x18, 0x0e, 0x80);
 	I2CWrite(0x18, 0x3c, 0x08); /* Set the DAC Mode to PRB_P8 */
@@ -1007,7 +893,6 @@ int main(void) {
 
 	capture_count = 0;
 	VADC_Start();
-    //volatile static int i = 0 ;
 
 	int i;
 	int16_t *buf = (int16_t*)AUDIO_BUFFER2;
@@ -1035,22 +920,11 @@ int main(void) {
         	//fir_filter_iq();
         	//fm_demod();
 //        	resample_fir_filter2();
-#if 0
-    		q15_t *src = I_DEST_BUFFER;
-    		q15_t *dst = I_FIR_BUFFER;
-        	for (i = 0; i < FIR_NUM_BLOCKS; i++) {
-        		arm_fir_fast_q15(&fir, src, dst, FIR_BLOCK_SIZE);
-        		src += FIR_BLOCK_SIZE;
-        		dst += FIR_BLOCK_SIZE;
-        	}
-#endif
         	//CLR_MEAS_PIN_3();
         } else if ((capture_count % 2048) < 1024) {
         	GPIO_SetValue(0,1<<8);
     	} else
         	GPIO_ClearValue(0,1<<8);
-        //if ((i & 0x1fffff) == 0x100000)
-        //	printf("%d\n", i);
 #if 0
         {
         	uint32_t txLevel = I2S_GetLevel(LPC_I2S0, I2S_TX_MODE);
