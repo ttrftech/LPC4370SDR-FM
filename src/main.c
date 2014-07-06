@@ -415,7 +415,7 @@ void fm_demod()
 	for (i = 0; i < length; i++) {
 		uint32_t x1 = src[i];
 		int32_t d = __SMUSDX(__SSUB16(x1, x0), x1);
-		int32_t n = __SMUAD(x1, x1) >> 12;
+		int32_t n = __SMUAD(x1, x1) >> 10;
 		int16_t y = d / n;
 		dest[i] = y;
 		x0 = x1;
@@ -466,6 +466,7 @@ struct {
 	int write_total;
 	int read_total;
 	int read_current;
+	int rebuffer_count;
 } audio_state;
 
 void
@@ -507,6 +508,15 @@ void resample_fir_filter2()
 		audio_state.write_total++;
 		//dest[cur++] = __PKHBT(__SSAT((acc0 >> 15), 16), __SSAT((acc1 >> 15), 16), 16);
 		idx += 13;
+	}
+
+#define THRESHOLD (7 * (AUDIO_BUFFER_SIZE/2) / 8)
+#define WR_GAP (1 * (AUDIO_BUFFER_SIZE/2) / 8)
+	int d = audio_state.write_current - audio_state.read_current;
+	d %= AUDIO_BUFFER_SIZE / 2;
+	if (d > THRESHOLD) {
+		audio_state.read_current = (audio_state.write_current - WR_GAP) % (AUDIO_BUFFER_SIZE / 2);
+		audio_state.rebuffer_count++;
 	}
 	resample_state.deemphasis_value = value;
 	audio_state.write_current = cur;
@@ -944,7 +954,6 @@ void I2S0_IRQHandler()
 {
 #if 1
 	uint32_t txLevel = I2S_GetLevel(LPC_I2S0, I2S_TX_MODE);
-	int rest = audio_state.write_total - audio_state.read_total;
 	if (txLevel <= 4) {
 		// Fill the remaining FIFO
 		int cur = audio_state.read_current;
@@ -1013,6 +1022,8 @@ int main(void) {
         	//int i;
 //        	LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
             //printf("write:%d read:%d\n", audio_state.write_total, audio_state.read_total);
+            //printf("diff:%d\n", audio_state.write_total - audio_state.read_total);
+            //printf("rebuf:%d\n", audio_state.rebuffer_count);
 //        	GPIO_SetValue(0,1<<8);
 
         	//int length = CAPTUREBUFFER_SIZE / 2;
