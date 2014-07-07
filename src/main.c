@@ -133,6 +133,11 @@ typedef struct {                            /*!< (@ 0x400F0000) VADC Structure  
 int32_t capture_count;
 
 
+#define AUDIO_RATE	48000
+#define IF_RATE		(13 * AUDIO_RATE / 2)
+#define ADC_RATE	(32 * IF_RATE)
+
+
 #define CAPTUREBUFFER		((uint8_t*)0x20000000)
 #define CAPTUREBUFFER_SIZE	0x10000
 
@@ -140,15 +145,14 @@ int32_t capture_count;
 #define NCO_COS_BUFFER		((uint8_t*)0x1008F800)
 #define NCO_BUFFER_SIZE		0x800
 #define NCO_SAMPLES			1024
-#define NCO_AMPL			(SHRT_MAX / 128)
+//#define NCO_AMPL			64
+//#define NCO_AMPL			(SHRT_MAX / 128)
 //#define NCO_AMPL			(SHRT_MAX / 64)
-//#define NCO_AMPL			(SHRT_MAX / 32)
+#define NCO_AMPL			(SHRT_MAX / 32)
 //#define NCO_AMPL			(SHRT_MAX / 16)
 //#define NCO_AMPL			(SHRT_MAX / 4)
 
 #define DECIMATE			32
-
-#define INTERMEDIATE_SAMPLE_RATE	312500000
 
 #define I_FIR_STATE			((q15_t*)0x10080000)
 #define I_FIR_BUFFER		((q15_t*)0x10080040)
@@ -159,7 +163,9 @@ int32_t capture_count;
 #define FIR_STATE_SIZE		0x40
 
 //#define FIR_GAIN			(16-8)
+//#define FIR_GAIN			(16-6)
 #define FIR_GAIN			(16-4)
+//#define FIR_GAIN			(16-2)
 //#define FIR_GAIN			(16)
 
 #define DEMOD_BUFFER 		((q15_t*)0x10088000)
@@ -256,7 +262,7 @@ static void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
 			d1 = e0;
 			e2 = d2 - e1;
 			d2 = e1;
-			result[l++] = e2 >> FIR_GAIN;
+			result[l++] = __SSAT(e2 >> FIR_GAIN, 16);
 			l %=  FIR_BUFFER_SIZE/2;
 		}
 	}
@@ -307,7 +313,7 @@ static void cic_decimate_q(CICState *cic, uint8_t *buf, int len)
 			d1 = e0;
 			e2 = d2 - e1;
 			d2 = e1;
-			result[l++] = e2 >> FIR_GAIN;
+			result[l++] = __SSAT(e2 >> FIR_GAIN, 16);
 			l %=  FIR_BUFFER_SIZE/2;
 		}
 	}
@@ -383,8 +389,9 @@ void fm_demod()
 		uint32_t x1 = src[i];
 		int32_t d = __SMUSDX(__SSUB16(x1, x0), x1);
 		int32_t n = __SMUAD(x1, x1) >> 10;
-		int16_t y = d / n;
+		int32_t y = d / n;
 		dest[i] = y;
+		//dest[i] = __SSAT((y * ((1<<16) + ((y * y) >> 4) / 3)) >> 16, 16);
 		x0 = x1;
 	}
 	fm_demod_state.last = x0;
