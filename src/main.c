@@ -141,9 +141,9 @@ int32_t capture_count;
 #define CAPTUREBUFFER		((uint8_t*)0x20000000)
 #define CAPTUREBUFFER_SIZE	0x10000
 
-#define NCO_SIN_BUFFER		((uint8_t*)0x1008F000)
-#define NCO_COS_BUFFER		((uint8_t*)0x1008F800)
-#define NCO_BUFFER_SIZE		0x800
+#define NCO_SIN_TABLE		((uint8_t*)0x1008F000)
+#define NCO_COS_TABLE		((uint8_t*)0x1008F800)
+#define NCO_TABLE_SIZE		0x800
 #define NCO_SAMPLES			1024
 //#define NCO_AMPL			64
 //#define NCO_AMPL			(SHRT_MAX / 128)
@@ -190,13 +190,16 @@ int32_t capture_count;
 #define NCO_SAMPLES 1024
 #define NCO_COS_OFFSET (NCO_CYCLE/4)
 
-static void ConfigureNCOTable(int freq)
+static void ConfigureNCO(float32_t freq)
 {
 	int i;
-	int16_t *costbl = (int16_t*)NCO_SIN_BUFFER;
-	int16_t *sintbl = (int16_t*)NCO_COS_BUFFER;
+	int16_t *costbl = (int16_t*)NCO_SIN_TABLE;
+	int16_t *sintbl = (int16_t*)NCO_COS_TABLE;
+	int f;
+	freq -= (int)(freq / ADC_RATE) * ADC_RATE;
+	f = (int)(freq / ADC_RATE * NCO_CYCLE);
 	for (i = 0; i < NCO_SAMPLES; i++) {
-		float32_t phase = 2*PI*freq*(i+0.5)/NCO_CYCLE;
+		float32_t phase = 2*PI*f*(i+0.5)/NCO_CYCLE;
 		costbl[i] = (int16_t)(arm_cos_f32(phase) * NCO_AMPL);
 		sintbl[i] = (int16_t)(arm_sin_f32(phase) * NCO_AMPL);
 	}
@@ -229,7 +232,7 @@ static void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
 	const uint32_t offset = 0x08000800;
 	int16_t *const result = (int16_t*)I_FIR_BUFFER;
 	uint32_t *capture = (uint32_t*)buf;
-	const uint32_t *nco_base = (uint32_t*)NCO_SIN_BUFFER;
+	const uint32_t *nco_base = (uint32_t*)NCO_SIN_TABLE;
 	const uint32_t *nco = nco_base;
 
 	int32_t s0 = cic->s0;
@@ -280,7 +283,7 @@ static void cic_decimate_q(CICState *cic, uint8_t *buf, int len)
 	const uint32_t offset = 0x08000800;
 	int16_t *const result = (int16_t*)Q_FIR_BUFFER;
 	uint32_t *capture = (uint32_t*)buf;
-	const uint32_t *nco_base = (uint32_t*)NCO_COS_BUFFER;
+	const uint32_t *nco_base = (uint32_t*)NCO_COS_TABLE;
 	const uint32_t *nco = nco_base;
 
 	int32_t s0 = cic->s0;
@@ -447,7 +450,7 @@ void
 deemphasis_init(int timeconst_us)
 {
 	resample_state.deemphasis_value = 0;
-	resample_state.deemphasis_mult = exp(-1e6/(timeconst_us * AUDIO_SAMPLE_RATE));
+	resample_state.deemphasis_mult = exp(-1e6/(timeconst_us * AUDIO_RATE));
 	resample_state.deemphasis_rest = 1 - resample_state.deemphasis_mult;
 }
 
@@ -817,10 +820,8 @@ static void ConfigureTLV320(uint32_t rate)
     scu_pinmux(0x3, 4, MD_PLN_FAST, FUNC5);     // WS
     scu_pinmux(0xF, 4, MD_PLN_FAST, FUNC6);    // MCLK
 
-	// output clock to TP_CLK0 for diagnosis
-	//LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_IRC << 24;
+	// output XTAL_OSC to TP_CLK0 for MCLK
 	LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_XTAL_OSC << 24;
-	//LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_PLL0_AUDIO << 24;
 	LPC_SCU->SFSCLK_0 = 0x1;
 
     // Initialize I2S
@@ -844,7 +845,6 @@ static void ConfigureTLV320(uint32_t rate)
 
     // Configure sampling frequency
     I2S_FreqConfig(LPC_I2S0, rate, I2S_TX_MODE);
-    //FreqConfig(LPC_I2S0, rate, I2S_TX_MODE);
 
     I2S_Stop(LPC_I2S0, I2S_TX_MODE);
 
@@ -890,17 +890,12 @@ int main(void) {
 	LPC_GPIO_PORT->DIR[3] |= (1UL << 7);
 	LPC_GPIO_PORT->SET[3] |= (1UL << 7);
 
-	//ConfigureNCOTable(0); // 0MHz
-	//ConfigureNCOTable(420000 / 5000); // 400kHz
-	//ConfigureNCOTable(420000 / 10000); // 400kHz
+	//ConfigureNCO(80400000);
+	ConfigureNCO(82500000);
+	//ConfigureNCO(85200000);
 
-	//ConfigureNCOTable(400000 / 9500); // 400kHz
-	//ConfigureNCOTable(400 * 1024 / 10000); // 400kHz
-	//ConfigureNCOTable(2500000 / 9700); // 2.5MHz
-	ConfigureNCOTable(2628000 / 9650); // 2.5MHz
 	memset(&cic_i, 0, sizeof cic_i);
 	memset(&cic_q, 0, sizeof cic_q);
-	//arm_fir_init_q15(&fir, FIR_NUM_TAPS, fir_coeff, fir_state, FIR_BLOCK_SIZE);
 	deemphasis_init(75);
 
 	ConfigureTLV320(48000);
@@ -908,7 +903,7 @@ int main(void) {
 	VADC_Init();
 
 	/* wait 5 msec */
-	emc_WaitUS(5000);
+	//emc_WaitUS(5000);
 
 	capture_count = 0;
 	VADC_Start();
