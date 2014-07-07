@@ -39,10 +39,17 @@
 #define DMA_NUM_LLI_TO_USE    16
 static GPDMA_LLI_Type DMA_Stuff[DMA_NUM_LLI_TO_USE];
 
+#if 1
+// PLL0AUDIO: 39.936MHz = (12MHz / 25) * (416 * 2) / (5 * 2)
+#define PLL0_MSEL	416
+#define PLL0_NSEL	25
+#define PLL0_PSEL	5
+#else
 // PLL0AUDIO: 40MHz = (12MHz / 15) * (400 * 2) / (8 * 2)
 #define PLL0_MSEL	400
 #define PLL0_NSEL	15
 #define PLL0_PSEL	8
+#endif
 //#define ADCCLK_MATCHVALUE	(2 - 1)  // 40MHz / 2 = 20MHz
 #define ADCCLK_MATCHVALUE	(4 - 1)  // 40MHz / 4 = 10MHz
 //#define ADCCLK_MATCHVALUE	(8 - 1)  // 40MHz / 8 = 5MHz
@@ -415,7 +422,7 @@ q15_t resample_fir_coeff_odd[RESAMPLE_NUM_TAPS] = {
 // 312.5kHz * 2/13 -> 48.076923kHz
 
 struct {
-	int index;
+	int32_t index;
 	float deemphasis_mult;
 	float deemphasis_rest;
 	float deemphasis_value;
@@ -437,13 +444,15 @@ deemphasis_init(int timeconst_us)
 	resample_state.deemphasis_rest = 1 - resample_state.deemphasis_mult;
 }
 
+#define INDEX_STEP (int32_t)((312500 * 65536 * 2) / 48000)
+
 void resample_fir_filter()
 {
 	const uint32_t *coeff;
 	const uint16_t *src = (const uint16_t *)RESAMPLE_STATE;
 	const uint32_t *s;
 	int32_t tail = RESAMPLE_BUFFER_SIZE;
-	int idx = resample_state.index;
+	int32_t idx = resample_state.index;
 	int32_t acc;
 	int i, j;
 	int cur = audio_state.write_current;
@@ -451,6 +460,7 @@ void resample_fir_filter()
 	float value = resample_state.deemphasis_value;
 
 	while (idx < tail) {
+		//i = idx >> 16;
 		if (idx & 0x1)
 			coeff = (uint32_t*)resample_fir_coeff_odd;
 		else
@@ -468,6 +478,7 @@ void resample_fir_filter()
 		audio_state.write_total++;
 		//dest[cur++] = __PKHBT(__SSAT((acc0 >> 15), 16), __SSAT((acc1 >> 15), 16), 16);
 		idx += 13;
+		//idx += INDEX_STEP;
 	}
 
 #define THRESHOLD (7 * (AUDIO_BUFFER_SIZE/2) / 8)
@@ -864,7 +875,7 @@ int main(void) {
 
     VADC_Stop();
 
-    printf("Hello World\n");
+    //printf("Hello World\n");
     GPIO_SetDir(0,1<<8, 1);
 	GPIO_ClearValue(0,1<<8);
 
@@ -878,7 +889,8 @@ int main(void) {
 
 	//ConfigureNCOTable(400000 / 9500); // 400kHz
 	//ConfigureNCOTable(400 * 1024 / 10000); // 400kHz
-	ConfigureNCOTable(2500000 / 9700); // 2.5MHz
+	//ConfigureNCOTable(2500000 / 9700); // 2.5MHz
+	ConfigureNCOTable(2628000 / 9650); // 2.5MHz
 	memset(&cic_i, 0, sizeof cic_i);
 	memset(&cic_q, 0, sizeof cic_q);
 	//arm_fir_init_q15(&fir, FIR_NUM_TAPS, fir_coeff, fir_state, FIR_BLOCK_SIZE);
