@@ -133,9 +133,10 @@ typedef struct {                            /*!< (@ 0x400F0000) VADC Structure  
 int32_t capture_count;
 
 
-#define AUDIO_RATE	48000
-#define IF_RATE		(13 * AUDIO_RATE / 2)
-#define ADC_RATE	(32 * IF_RATE)
+#define AUDIO_RATE			48000
+#define IF_RATE				(13 * AUDIO_RATE / 2)
+#define DECIMATION_RATIO	32
+#define ADC_RATE			(DECIMATION_RATIO * IF_RATE)
 
 
 #define CAPTUREBUFFER		((uint8_t*)0x20000000)
@@ -151,8 +152,6 @@ int32_t capture_count;
 #define NCO_AMPL			(SHRT_MAX / 32)
 //#define NCO_AMPL			(SHRT_MAX / 16)
 //#define NCO_AMPL			(SHRT_MAX / 4)
-
-#define DECIMATE			32
 
 #define I_FIR_STATE			((q15_t*)0x10080000)
 #define I_FIR_BUFFER		((q15_t*)0x10080040)
@@ -175,11 +174,9 @@ int32_t capture_count;
 #define RESAMPLE_BUFFER 	((q15_t*)0x10089100)
 #define RESAMPLE_BUFFER_SIZE 0x400
 
-#define AUDIO_SAMPLE_RATE	48000
-
 #define AUDIO_BUFFER 		((q15_t*)0x1008A000)
 #define AUDIO_BUFFER_SIZE	0x2000
-#define AUDIO_BUFFER2 		((q15_t*)0x1008C000)
+#define AUDIO_TEST_BUFFER 		((q15_t*)0x1008C000)
 
 
 /*
@@ -192,10 +189,11 @@ int32_t capture_count;
 
 static void ConfigureNCO(float32_t freq)
 {
-	int i;
 	int16_t *costbl = (int16_t*)NCO_SIN_TABLE;
 	int16_t *sintbl = (int16_t*)NCO_COS_TABLE;
 	int f;
+	int i;
+
 	freq -= (int)(freq / ADC_RATE) * ADC_RATE;
 	f = (int)(freq / ADC_RATE * NCO_CYCLE);
 	for (i = 0; i < NCO_SAMPLES; i++) {
@@ -250,7 +248,7 @@ static void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
 	for (i = 0; i < len / 4; ) {
 		nco = nco_base;
 		for (j = 0; j < NCO_SAMPLES/2; ) {
-			for (k = 0; k < DECIMATE / 2; k++) {
+			for (k = 0; k < DECIMATION_RATIO / 2; k++) {
 				x = capture[i++];
 				f = *nco++;
 				x = __SSUB16(x, offset);
@@ -482,6 +480,7 @@ void resample_fir_filter()
 			acc = __SMLAD(*s++, *coeff++, acc);
 		}
 
+		// deemphasis with time constant
 		value = (float)acc * resample_state.deemphasis_rest + value * resample_state.deemphasis_mult;
 		dest[cur++] = __SSAT(((int32_t)value >> 10), 16);
 		cur %= AUDIO_BUFFER_SIZE / 2;
@@ -491,14 +490,6 @@ void resample_fir_filter()
 		//idx += INDEX_STEP;
 	}
 
-#define THRESHOLD (7 * (AUDIO_BUFFER_SIZE/2) / 8)
-#define WR_GAP (1 * (AUDIO_BUFFER_SIZE/2) / 8)
-	int d = audio_state.write_current - audio_state.read_current;
-	d %= AUDIO_BUFFER_SIZE / 2;
-	if (d > THRESHOLD) {
-		audio_state.read_current = (audio_state.write_current - WR_GAP) % (AUDIO_BUFFER_SIZE / 2);
-		audio_state.rebuffer_count++;
-	}
 	resample_state.deemphasis_value = value;
 	audio_state.write_current = cur;
 	resample_state.index = idx - tail;
@@ -508,6 +499,21 @@ void resample_fir_filter()
 		//*state++ = *src++;
 	    __asm__ volatile ("ldr r0, [%0], #+4\n" : : "r" (src) : "r0");
 	    __asm__ volatile ("str r0, [%0], #+4\n" : : "r" (state));
+	}
+}
+
+
+#define REBUFFER_THRESHOLD 	(7 * (AUDIO_BUFFER_SIZE/2) / 8)
+#define REBUFFER_WR_GAP 	(1 * (AUDIO_BUFFER_SIZE/2) / 8)
+
+void
+audio_rebuffer()
+{
+	int d = audio_state.write_current - audio_state.read_current;
+	d %= AUDIO_BUFFER_SIZE / 2;
+	if (d > REBUFFER_THRESHOLD) {
+		audio_state.read_current = (audio_state.write_current - REBUFFER_WR_GAP) % (AUDIO_BUFFER_SIZE / 2);
+		audio_state.rebuffer_count++;
 	}
 }
 
@@ -536,6 +542,7 @@ void DMA_IRQHandler (void)
 	fir_filter_iq();
 	fm_demod();
 	resample_fir_filter();
+	audio_rebuffer();
     CLR_MEAS_PIN_3();
     capture_count ++;
   }
@@ -799,7 +806,8 @@ static void ConfigureTLV320(uint32_t rate)
 	I2CWrite(0x18, 0x02, 0x01); /* Enable Master Analog Power Control */
 	I2CWrite(0x18, 0x7b, 0x01); /* Set the REF charging time to 40ms */
 	I2CWrite(0x18, 0x14, 0x25); /* HP soft stepping settings for optimal pop performance at power up Rpop used is 6k with N = 6 and soft step = 20usec. This should work with 47uF coupling capacitor. Can try N=5,6 or 7 time constants as well. Trade-off delay vs “pop” sound. */
-	I2CWrite(0x18, 0x0a, 0x00); /* Set the Input Common Mode to 0.9V and Output Common Mode for Headphone to Input Common Mode */
+//	I2CWrite(0x18, 0x0a, 0x00); /* Set the Input Common Mode to 0.9V and Output Common Mode for Headphone to Input Common Mode */
+	I2CWrite(0x18, 0x0a, 0x33); /* Set the Input Common Mode to 0.9V and Output Common Mode for Headphone to 1.65V */
 	I2CWrite(0x18, 0x0c, 0x08); /* Route Left DAC to HPL */
 	I2CWrite(0x18, 0x0d, 0x08); /* Route Right DAC to HPR */
 	I2CWrite(0x18, 0x03, 0x00); /* Set the DAC PTM mode to PTM_P3/4 */
@@ -854,6 +862,16 @@ static void ConfigureTLV320(uint32_t rate)
     NVIC_EnableIRQ(I2S0_IRQn);
 }
 
+void generate_test_tone()
+{
+	int i;
+	int16_t *buf = (int16_t*)AUDIO_TEST_BUFFER;
+	for (i = 0; i < AUDIO_BUFFER_SIZE / 2; i++) {
+		float res = arm_sin_f32((float)i * 2 * PI * 13000 / 48000);
+		buf[i] = (int)(res * 20000.0);
+	}
+}
+
 void I2S0_IRQHandler()
 {
 #if 1
@@ -864,7 +882,7 @@ void I2S0_IRQHandler()
 		int16_t *buffer = (int16_t*)AUDIO_BUFFER;
 		int i;
 		for (i = 0; i < (8 - txLevel); i++) {
-			uint32_t x = *(uint32_t *)&buffer[cur];
+			uint32_t x = *(uint32_t *)&buffer[cur]; // read TWO samples
 			LPC_I2S0->TXFIFO = x;//__PKHTB(x, x, 0);
 			cur += 2;
 			cur %= AUDIO_BUFFER_SIZE / 2;
@@ -908,12 +926,7 @@ int main(void) {
 	capture_count = 0;
 	VADC_Start();
 
-	int i;
-	int16_t *buf = (int16_t*)AUDIO_BUFFER2;
-	for (i = 0; i < 0x1000; i++) {
-		float res = arm_sin_f32((float)i * 2 * PI * 13000 / 48000);
-		buf[i] = (int)(res * 20000.0);
-	}
+	generate_test_tone();
 
     while(1) {
         //i++ ;
