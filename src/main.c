@@ -146,10 +146,11 @@ int32_t capture_count;
 #define NCO_COS_TABLE		((uint8_t*)0x1008F800)
 #define NCO_TABLE_SIZE		0x800
 #define NCO_SAMPLES			1024
-//#define NCO_AMPL			64
+//#define NCO_AMPL			32
+#define NCO_AMPL			64
 //#define NCO_AMPL			(SHRT_MAX / 128)
 //#define NCO_AMPL			(SHRT_MAX / 64)
-#define NCO_AMPL			(SHRT_MAX / 32)
+//#define NCO_AMPL			(SHRT_MAX / 32)
 //#define NCO_AMPL			(SHRT_MAX / 16)
 //#define NCO_AMPL			(SHRT_MAX / 4)
 
@@ -248,6 +249,17 @@ static void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
 	for (i = 0; i < len / 4; ) {
 		nco = nco_base;
 		for (j = 0; j < NCO_SAMPLES/2; ) {
+#if 0
+#define XX() \
+			x = capture[i++];\
+			f = *nco++;\
+			x = __SSUB16(x, offset);\
+			s0 = __SMLAD(x, f, s0);\
+			s1 += s0;\
+			s2 += s1
+			XX();XX();XX();XX();XX();XX();XX();XX();
+			XX();XX();XX();XX();XX();XX();XX();XX();
+#else
 			for (k = 0; k < DECIMATION_RATIO / 2; k++) {
 				x = capture[i++];
 				f = *nco++;
@@ -257,6 +269,7 @@ static void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
 				s2 += s1;
 				j++;
 			}
+#endif
 			e0 = d0 - s2;
 			d0 = s2;
 			e1 = d1 - e0;
@@ -376,6 +389,7 @@ void fir_filter_iq()
 
 struct {
 	uint32_t last;
+	int32_t carrier;
 } fm_demod_state;
 
 void fm_demod()
@@ -386,16 +400,20 @@ void fm_demod()
 	int i;
 
 	uint32_t x0 = fm_demod_state.last;
+	int32_t n;
 	for (i = 0; i < length; i++) {
 		uint32_t x1 = src[i];
+		// I*(I-I0)-Q*(Q-Q0)
 		int32_t d = __SMUSDX(__SSUB16(x1, x0), x1);
-		int32_t n = __SMUAD(x1, x1) >> 10;
+		// I^2 + Q^2
+		n = __SMUAD(x1, x1) >> 10;
 		int32_t y = d / n;
 		dest[i] = y;
 		//dest[i] = __SSAT((y * ((1<<16) + ((y * y) >> 4) / 3)) >> 16, 16);
 		x0 = x1;
 	}
 	fm_demod_state.last = x0;
+	fm_demod_state.carrier = n;
 }
 
 #define RESAMPLE_NUM_TAPS	128
@@ -498,7 +516,7 @@ void resample_fir_filter()
 	for (i = 0; i < RESAMPLE_STATE_SIZE / sizeof(uint32_t); i++) {
 		//*state++ = *src++;
 	    __asm__ volatile ("ldr r0, [%0], #+4\n" : : "r" (src) : "r0");
-	    __asm__ volatile ("str r0, [%0], #+4\n" : : "r" (state));
+	    __asm__ volatile ("str r0, [%0], #+4\n" : : "r" (state) : "r0");
 	}
 }
 
@@ -727,29 +745,28 @@ static void VADC_Start(void)
 
 static void VADC_Stop(void)
 {
+  // disable DMA
+  LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
+
   NVIC_DisableIRQ(I2S0_IRQn);
   NVIC_DisableIRQ(DMA_IRQn);
   //NVIC_DisableIRQ(VADC_IRQn);
 
-  // disable DMA
-  LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
-
+  LPC_VADC->TRIGGER = 0;
+  // Clear FIFO
+  LPC_VADC->FLUSH = 1;
   // power down VADC
   LPC_VADC->POWER_CONTROL = 0;
 
-  // Clear FIFO
-  LPC_VADC->FLUSH = 1;
-
   // Reset the VADC block
   RGU_SoftReset(RGU_SIG_VADC);
-  //while(RGU_GetSignalStatus(RGU_SIG_VADC));
+  while(RGU_GetSignalStatus(RGU_SIG_VADC));
 }
 
 static void priorityConfig()
 {
   // High - Copying of samples
   NVIC_SetPriority(DMA_IRQn,   ((0x01<<3)|0x01));
-
   NVIC_SetPriority(I2S0_IRQn,  ((0x02<<3)|0x01));
 
   // Low - Communication
@@ -900,7 +917,7 @@ int main(void) {
 
     VADC_Stop();
 
-    //printf("Hello World\n");
+    printf("Hello World\n");
     GPIO_SetDir(0,1<<8, 1);
 	GPIO_ClearValue(0,1<<8);
 
@@ -932,7 +949,7 @@ int main(void) {
         //i++ ;
         if ((capture_count % 2048) == 2047) {
         	//int i;
-//        	LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
+        	//LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
             //printf("write:%d read:%d\n", audio_state.write_total, audio_state.read_total);
             //printf("diff:%d\n", audio_state.write_total - audio_state.read_total);
             //printf("rebuf:%d\n", audio_state.rebuffer_count);
@@ -948,6 +965,8 @@ int main(void) {
         	//fm_demod();
 //        	resample_fir_filter2();
         	//CLR_MEAS_PIN_3();
+        	//break;
+            //printf("carrier:%d\n", fm_demod_state.carrier);
         } else if ((capture_count % 2048) < 1024) {
         	GPIO_SetValue(0,1<<8);
     	} else
@@ -976,3 +995,16 @@ int main(void) {
 	VADC_Stop();
     return 0 ;
 }
+
+
+#ifdef DEBUG
+void check_failed(uint8_t *file, uint32_t line)
+{
+/* User can add his own implementation to report the file name and line number,
+ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+
+/* Infinite loop */
+while(1);
+}
+#endif
+

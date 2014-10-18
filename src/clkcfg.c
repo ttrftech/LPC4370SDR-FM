@@ -124,7 +124,7 @@ void setup_pll0audio(uint32_t msel, uint32_t nsel, uint32_t psel)
 {
   uint32_t ClkSrc;
 
-  CGU_EnableEntity(CGU_BASE_PERIPH, DISABLE);
+//  CGU_EnableEntity(CGU_BASE_PERIPH, DISABLE);
   CGU_EnableEntity(CGU_BASE_VADC, DISABLE);
 
   /* disable clock, disable skew enable, power down pll,
@@ -155,6 +155,6 @@ void setup_pll0audio(uint32_t msel, uint32_t nsel, uint32_t psel)
   CGU_UpdateClock();
 
   // Re-enable the clocks that uses PLL0AUDIO
-  CGU_EnableEntity(CGU_BASE_PERIPH, ENABLE);
+//  CGU_EnableEntity(CGU_BASE_PERIPH, ENABLE);
   CGU_EnableEntity(CGU_BASE_VADC, ENABLE);
 }

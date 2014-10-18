@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <projectDescription>
-	<name>HSADCTest2</name>
+	<name>FMReceiver</name>
 	<comment></comment>
 	<projects>
 		<project>CMSIS_LPC43xx_DriverLib</project>
