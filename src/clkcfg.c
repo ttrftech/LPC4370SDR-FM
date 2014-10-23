@@ -2,7 +2,7 @@
 #include <lpc43xx_cgu.h>
 #include <lpc43xx_emc.h>
 
-#include "hsadctest.h"
+#include "fmreceiver.h"
 
 /*! Frequency of external xtal */
 #define XTAL_FREQ  (12000000UL)
