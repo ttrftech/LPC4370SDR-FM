@@ -165,7 +165,9 @@ static struct {
 	int tp;
 } uistat;
 
-#define FREQ_STEP 100000
+#define CHANNEL_MAX	9
+#define TP_MAX		4
+#define FREQ_STEP	100000
 
 void
 ui_update()
@@ -179,7 +181,7 @@ ui_update()
 		sprintf(buf, "%2.1fMHz", uistat.freq / 1000000);
 		break;
 	case CHANNEL:
-		sprintf(buf, "Ch:%d %2.1f", uistat.channel, uistat.freq / 1000000);
+		sprintf(buf, "Ch%d %2.1f", uistat.channel, uistat.freq / 1000000);
 		break;
 	case TESTP:
 		switch (uistat.tp) {
@@ -187,13 +189,13 @@ ui_update()
 			sprintf(buf, "CAP:%04x", *(uint16_t*)CAPTUREBUFFER0);
 			break;
 		case 1:
-			sprintf(buf, "FIR:%04x", *(uint16_t*)0x10080040);
+			sprintf(buf, "CIC:%04x", *(uint16_t*)0x10080040);
 			break;
 		case 2:
-			sprintf(buf, "DEM:%04x", *(uint16_t*)0x10088000);
+			sprintf(buf, "FIR:%04x", *(uint16_t*)0x10088000);
 			break;
 		case 3:
-			sprintf(buf, "SAM:%04x", *(uint16_t*)0x10089100);
+			sprintf(buf, "DEM:%04x", *(uint16_t*)0x10089100);
 			break;
 		case 4:
 			sprintf(buf, "AUD:%04x", *(uint16_t*)0x1008A000);
@@ -266,14 +268,14 @@ ui_process()
 				uistat.freq -= FREQ_STEP;
 			ConfigureNCO(uistat.freq);
 		} else if (uistat.mode == CHANNEL) {
-			if ((status & ENCODER_UP))
+			if ((status & ENCODER_UP) && uistat.channel < CHANNEL_MAX)
 				uistat.channel++;
-			if ((status & ENCODER_DOWN))
+			if ((status & ENCODER_DOWN) && uistat.channel > 0)
 				uistat.channel--;
 		} else if (uistat.mode == TESTP) {
-			if ((status & ENCODER_UP))
+			if ((status & ENCODER_UP) && uistat.tp < TP_MAX)
 				uistat.tp++;
-			if ((status & ENCODER_DOWN))
+			if ((status & ENCODER_DOWN) && uistat.tp > 0)
 				uistat.tp--;
 		}
 		ui_update();

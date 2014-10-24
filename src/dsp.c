@@ -103,7 +103,8 @@ static CICState cic_q;
 __RAMFUNC(RAM)
 void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
 {
-	const uint32_t offset = 0x08000800;
+	//const uint32_t offset = 0x08000800;
+	const uint32_t offset = 0x08800880;
 	int16_t *const result = (int16_t*)I_FIR_BUFFER;
 	uint32_t *capture = (uint32_t*)buf;
 	const uint32_t *nco_base = (uint32_t*)NCO_SIN_TABLE;
@@ -155,7 +156,8 @@ void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
 __RAMFUNC(RAM)
 void cic_decimate_q(CICState *cic, uint8_t *buf, int len)
 {
-	const uint32_t offset = 0x08000800;
+	//const uint32_t offset = 0x08000800;
+	const uint32_t offset = 0x08800880;
 	int16_t *const result = (int16_t*)Q_FIR_BUFFER;
 	uint32_t *capture = (uint32_t*)buf;
 	const uint32_t *nco_base = (uint32_t*)NCO_COS_TABLE;
@@ -388,8 +390,8 @@ void resample_fir_filter()
 }
 
 
-#define REBUFFER_THRESHOLD 	(7 * (AUDIO_BUFFER_SIZE/2) / 8)
-#define REBUFFER_WR_GAP 	(1 * (AUDIO_BUFFER_SIZE/2) / 8)
+#define REBUFFER_THRESHOLD 	(6 * (AUDIO_BUFFER_SIZE/2) / 8)
+#define REBUFFER_WR_GAP 	(3 * (AUDIO_BUFFER_SIZE/2) / 8)
 
 __RAMFUNC(RAM)
 void
