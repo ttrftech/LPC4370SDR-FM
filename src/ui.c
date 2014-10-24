@@ -157,6 +157,37 @@ int btn_check()
 	return status;
 }
 
+static struct {
+	enum { GAIN, CHANNEL, FREQ, MODE_MAX } mode;
+	int gain;
+	int channel;
+	float32_t freq;
+} uistat;
+
+#define FREQ_STEP 100000
+
+void
+ui_update()
+{
+	char buf[16];
+	switch (uistat.mode) {
+	case GAIN:
+		sprintf(buf, "Vol:%ddB", uistat.gain + AUDIO_GAIN_REF);
+		break;
+	case FREQ:
+		sprintf(buf, "%2.1fMHz", uistat.freq / 1000000);
+		break;
+	case CHANNEL:
+		sprintf(buf, "Ch:%d %2.1f", uistat.channel, uistat.freq / 1000000);
+		break;
+	default:
+		return;
+	}
+	i2clcd_pos(0, 1);
+	i2clcd_str(buf);
+	i2clcd_str("        ");
+}
+
 void
 ui_init()
 {
@@ -175,32 +206,49 @@ ui_init()
 
 	i2clcd_init();
 	i2clcd_str("HelloSDR");
+
+	uistat.mode = GAIN;
+	uistat.gain = 0;
+	uistat.channel = 0;
+	uistat.freq = 82500000;
+	ui_update();
 }
 
 void
 ui_process()
 {
-	static int value = 440;
-	char buf[16];
-
 	int status = btn_check();
 	if (status != 0) {
+#if 0
 		if (status & EVT_BUTTON_SINGLE_CLICK)
 			value += 10;
-#if 0
 		if (status & EVT_BUTTON_DOUBLE_CLICK)
 			value -= 10;
 		if (status & EVT_BUTTON_DOWN_LONG)
 			value = 0;
 #endif
-		if (status & ENCODER_UP)
-			value++;
-		if (status & ENCODER_DOWN)
-			value--;
+		if (status & EVT_BUTTON_SINGLE_CLICK) {
+			uistat.mode = (uistat.mode + 1) % MODE_MAX;
+		} else if (uistat.mode == GAIN) {
+			if ((status & ENCODER_UP) && uistat.gain < AUDIO_GAIN_MAX)
+				uistat.gain++;
+			if ((status & ENCODER_DOWN) && uistat.gain > AUDIO_GAIN_MIN)
+				uistat.gain--;
+			audio_set_gain(uistat.gain);
+		} else if (uistat.mode == FREQ) {
+			if ((status & ENCODER_UP))
+				uistat.freq += FREQ_STEP;
+			if ((status & ENCODER_DOWN))
+				uistat.freq -= FREQ_STEP;
+			ConfigureNCO(uistat.freq);
+		} else if (uistat.mode == CHANNEL) {
+			if ((status & ENCODER_UP))
+				uistat.channel++;
+			if ((status & ENCODER_DOWN))
+				uistat.channel--;
+		}
+		ui_update();
 
-		sprintf(buf, "%d  ", value);
-		i2clcd_pos(0, 1);
-		i2clcd_str(buf);
 #if 0
 		if (status & EVT_BUTTON_SINGLE_CLICK) {
 			//uint32_t *p = (uint32_t *)CAPTUREBUFFER;

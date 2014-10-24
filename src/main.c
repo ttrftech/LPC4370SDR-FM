@@ -300,6 +300,21 @@ static int I2CWrite(uint8_t addr, uint8_t data0, uint8_t data1)
 	}
 }
 
+// -7 ~ 29
+void audio_set_gain(int gain)
+{
+	if (gain < -6)
+		gain = 0x40;
+	else if (gain > 29)
+		gain = 29;
+	else
+		gain &= 0x3f;
+
+	I2CWrite(0x18, 0x00, 0x01); /* Select Page 1 */
+	I2CWrite(0x18, 0x10, gain); /* HPL Driver Gain */
+	I2CWrite(0x18, 0x11, gain); /* HPR Driver Gain */
+}
+
 static void ConfigureTLV320(uint32_t rate)
 {
     I2S_CFG_Type i2sCfg;
@@ -394,7 +409,7 @@ int main(void) {
 
     VADC_Stop();
 
-    printf("Hello SDR!\n");
+    //printf("Hello SDR!\n");
     LED_INIT();
     ui_init();
 	dsp_init();

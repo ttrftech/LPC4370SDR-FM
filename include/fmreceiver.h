@@ -7,10 +7,10 @@
 //#define CAPTUREBUFFER		((uint8_t*)0x20000000)
 //#define CAPTUREBUFFER_SIZE	0x10000
 //#define CAPTUREBUFFER		((uint8_t*)0x20008000)
-#define CAPTUREBUFFER_SIZE	0x8000
+#define CAPTUREBUFFER_SIZE	0x10000
 #define CAPTUREBUFFER0		((uint8_t*)0x20000000)
 #define CAPTUREBUFFER1		((uint8_t*)0x20008000)
-#define CAPTUREBUFFER_SIZEHALF	0x4000
+#define CAPTUREBUFFER_SIZEHALF	0x8000
 #define AUDIO_RATE			48000
 #define IF_RATE				(13 * AUDIO_RATE / 2)
 #define DECIMATION_RATIO	32
@@ -21,6 +21,12 @@ extern void ConfigureNCO(float32_t freq);
 extern void DMA_IRQHandler(void);
 extern void generate_test_tone(int freq);
 extern void dsp_init();
+
+extern void audio_set_gain(int gain);
+
+#define AUDIO_GAIN_MAX 29
+#define AUDIO_GAIN_MIN -7
+#define AUDIO_GAIN_REF 7
 
 // ui.c
 extern void ui_init();
