@@ -385,7 +385,7 @@ static void ConfigureTLV320(uint32_t rate)
 }
 
 int main(void) {
-	setup_systemclock();
+    setup_systemclock();
     setup_pll0audio(PLL0_MSEL, PLL0_NSEL, PLL0_PSEL);
 
     // Setup SysTick Timer to interrupt at 1 msec intervals
@@ -395,8 +395,7 @@ int main(void) {
     VADC_Stop();
 
     printf("Hello SDR!\n");
-    GPIO_SetDir(0,1<<8, 1);
-	GPIO_ClearValue(0,1<<8);
+    LED_INIT();
     ui_init();
 	dsp_init();
 
@@ -420,11 +419,11 @@ int main(void) {
     while(1) {
     	ui_process();
 
-    	if ((capture_count % 1024) < 512) {
-    	 	GPIO_SetValue(0,1<<8);
-    	} else {
-    	   	GPIO_ClearValue(0,1<<8);
-    	}
+    	//if ((capture_count % 1024) < 512) {
+    	// 	GPIO_SetValue(0,1<<8);
+    	//} else {
+    	//   	GPIO_ClearValue(0,1<<8);
+    	//}
 
     	//printf("%08x %08x\n", LPC_VADC->FIFO_OUTPUT[0], LPC_VADC->FIFO_OUTPUT[1]);
     	//emc_WaitUS(500000);

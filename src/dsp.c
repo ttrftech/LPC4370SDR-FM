@@ -460,6 +460,15 @@ void DMA_IRQHandler (void)
 	audio_rebuffer();
     CLR_MEAS_PIN_3();
     capture_count ++;
+
+    {
+    	// toggle LED with every 1024 interrupts
+    	int c = capture_count % 1024;
+    	if (c == 0)
+    	 	GPIO_SetValue(0, 1<<8);
+    	else if (c == 512)
+    	   	GPIO_ClearValue(0, 1<<8);
+    }
   }
 }
 

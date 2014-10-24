@@ -1,8 +1,8 @@
-
-
-
+#ifndef __FMRECEIVER_H__
+#define __FMRECEIVER_H__
 
 #include <arm_math.h>
+#include <lpc43xx_gpio.h>
 
 //#define CAPTUREBUFFER		((uint8_t*)0x20000000)
 //#define CAPTUREBUFFER_SIZE	0x10000
@@ -33,6 +33,9 @@ extern void setup_pll0audio(uint32_t msel, uint32_t nsel, uint32_t psel);
 
 extern volatile int32_t capture_count;
 
+#define LED_ON()		 	GPIO_SetValue(0, 1<<8)
+#define LED_OFF()		 	GPIO_ClearValue(0, 1<<8)
+#define LED_INIT()	   do { GPIO_SetDir(0, 1<<8, 1); GPIO_ClearValue(0, 1<<8); } while(0)
 
 
 // ------------------------------------------------------------------------------------------------
@@ -103,3 +106,5 @@ typedef struct {                            /*!< (@ 0x400F0000) VADC Structure  
 
 #define CGU_BASE_VADC CGU_BASE_ENET_CSR
 #define VADC_IRQn RESERVED7_IRQn
+
+#endif /* __FMRECEIVER_H__ */
