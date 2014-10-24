@@ -158,10 +158,11 @@ int btn_check()
 }
 
 static struct {
-	enum { GAIN, CHANNEL, FREQ, MODE_MAX } mode;
+	enum { GAIN, CHANNEL, FREQ, TESTP, MODE_MAX } mode;
 	int gain;
 	int channel;
 	float32_t freq;
+	int tp;
 } uistat;
 
 #define FREQ_STEP 100000
@@ -179,6 +180,28 @@ ui_update()
 		break;
 	case CHANNEL:
 		sprintf(buf, "Ch:%d %2.1f", uistat.channel, uistat.freq / 1000000);
+		break;
+	case TESTP:
+		switch (uistat.tp) {
+		case 0:
+			sprintf(buf, "CAP:%04x", *(uint16_t*)CAPTUREBUFFER0);
+			break;
+		case 1:
+			sprintf(buf, "FIR:%04x", *(uint16_t*)0x10080040);
+			break;
+		case 2:
+			sprintf(buf, "DEM:%04x", *(uint16_t*)0x10088000);
+			break;
+		case 3:
+			sprintf(buf, "SAM:%04x", *(uint16_t*)0x10089100);
+			break;
+		case 4:
+			sprintf(buf, "AUD:%04x", *(uint16_t*)0x1008A000);
+			break;
+		default:
+			sprintf(buf, "undef");
+			break;
+		}
 		break;
 	default:
 		return;
@@ -211,6 +234,7 @@ ui_init()
 	uistat.gain = 0;
 	uistat.channel = 0;
 	uistat.freq = 82500000;
+	uistat.tp = 0;
 	ui_update();
 }
 
@@ -246,6 +270,11 @@ ui_process()
 				uistat.channel++;
 			if ((status & ENCODER_DOWN))
 				uistat.channel--;
+		} else if (uistat.mode == TESTP) {
+			if ((status & ENCODER_UP))
+				uistat.tp++;
+			if ((status & ENCODER_DOWN))
+				uistat.tp--;
 		}
 		ui_update();
 
@@ -267,6 +296,8 @@ ui_process()
 			generate_test_tone(value);
 		}
 #endif
-	}
+	} else if (capture_count % 512 == 0)
+		ui_update();
+
     systick_delay(1);
 }

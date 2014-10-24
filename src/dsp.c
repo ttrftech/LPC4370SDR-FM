@@ -38,24 +38,21 @@
 /*  0x10000 / 2 / 32 */
 #define FIR_BUFFER_SIZE		0x400
 #define FIR_STATE_SIZE		0x40
-
-//#define FIR_GAIN			(16-8)
-//#define FIR_GAIN			(16-6)
-#define FIR_GAIN			(16-4)
-//#define FIR_GAIN			(16-2)
-//#define FIR_GAIN			(16)
+#define FIR_GAINBITS		4	/* 0 ~ 6 */
 
 #define DEMOD_BUFFER 		((q15_t*)0x10088000)
 #define DEMOD_BUFFER_SIZE	0x800
+#define DEMOD_GAINBITS		6	/* 0 ~ 6 */
+
 #define RESAMPLE_STATE 		((q15_t*)0x10089000)
 #define RESAMPLE_STATE_SIZE	0x100
 #define RESAMPLE_BUFFER 	((q15_t*)0x10089100)
 #define RESAMPLE_BUFFER_SIZE 0x400
+#define RESAMPLE_GAINBITS	5	/* 0 ~ 6 */
 
 #define AUDIO_BUFFER 		((q15_t*)0x1008A000)
 #define AUDIO_BUFFER_SIZE	0x2000
-#define AUDIO_TEST_BUFFER 		((q15_t*)0x1008C000)
-
+#define AUDIO_TEST_BUFFER 	((q15_t*)0x1008C000)
 
 /*
  * DSP Processing
@@ -127,17 +124,6 @@ void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
 	for (i = 0; i < len / 4; ) {
 		nco = nco_base;
 		for (j = 0; j < NCO_SAMPLES/2; ) {
-#if 0
-#define XX() \
-			x = capture[i++];\
-			f = *nco++;\
-			x = __SSUB16(x, offset);\
-			s0 = __SMLAD(x, f, s0);\
-			s1 += s0;\
-			s2 += s1
-			XX();XX();XX();XX();XX();XX();XX();XX();
-			XX();XX();XX();XX();XX();XX();XX();XX();
-#else
 			for (k = 0; k < DECIMATION_RATIO / 2; k++) {
 				x = capture[i++];
 				f = *nco++;
@@ -147,14 +133,13 @@ void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
 				s2 += s1;
 				j++;
 			}
-#endif
 			e0 = d0 - s2;
 			d0 = s2;
 			e1 = d1 - e0;
 			d1 = e0;
 			e2 = d2 - e1;
 			d2 = e1;
-			result[l++] = __SSAT(e2 >> FIR_GAIN, 16);
+			result[l++] = __SSAT(e2 >> (16 - FIR_GAINBITS), 16);
 			l %=  FIR_BUFFER_SIZE/2;
 		}
 	}
@@ -206,7 +191,7 @@ void cic_decimate_q(CICState *cic, uint8_t *buf, int len)
 			d1 = e0;
 			e2 = d2 - e1;
 			d2 = e1;
-			result[l++] = __SSAT(e2 >> FIR_GAIN, 16);
+			result[l++] = __SSAT(e2 >> (16 - FIR_GAINBITS), 16);
 			l %=  FIR_BUFFER_SIZE/2;
 		}
 	}
@@ -287,7 +272,7 @@ void fm_demod()
 		// I*(I-I0)-Q*(Q-Q0)
 		int32_t d = __SMUSDX(__SSUB16(x1, x0), x1);
 		// I^2 + Q^2
-		n = __SMUAD(x1, x1) >> 10;
+		n = __SMUAD(x1, x1) >> (16 - DEMOD_GAINBITS);
 		int32_t y = d / n;
 		dest[i] = y;
 		//dest[i] = __SSAT((y * ((1<<16) + ((y * y) >> 4) / 3)) >> 16, 16);
@@ -382,7 +367,7 @@ void resample_fir_filter()
 
 		// deemphasis with time constant
 		value = (float)acc * resample_state.deemphasis_rest + value * resample_state.deemphasis_mult;
-		dest[cur++] = __SSAT(((int32_t)value >> 10), 16);
+		dest[cur++] = __SSAT((int32_t)value >> (16 - RESAMPLE_GAINBITS), 16);
 		cur %= AUDIO_BUFFER_SIZE / 2;
 		audio_state.write_total++;
 		//dest[cur++] = __PKHBT(__SSAT((acc0 >> 15), 16), __SSAT((acc1 >> 15), 16), 16);
