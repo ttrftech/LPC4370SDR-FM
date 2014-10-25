@@ -4,6 +4,12 @@
 #include <arm_math.h>
 #include <lpc43xx_gpio.h>
 
+#define AUDIO_RATE			48000
+#define IF_RATE				(13 * AUDIO_RATE / 2)
+#define DECIMATION_RATIO	32
+#define ADC_RATE			(DECIMATION_RATIO * IF_RATE)
+
+
 //#define CAPTUREBUFFER		((uint8_t*)0x20000000)
 //#define CAPTUREBUFFER_SIZE	0x10000
 //#define CAPTUREBUFFER		((uint8_t*)0x20008000)
@@ -11,10 +17,43 @@
 #define CAPTUREBUFFER0		((uint8_t*)0x20000000)
 #define CAPTUREBUFFER1		((uint8_t*)0x20008000)
 #define CAPTUREBUFFER_SIZEHALF	0x8000
-#define AUDIO_RATE			48000
-#define IF_RATE				(13 * AUDIO_RATE / 2)
-#define DECIMATION_RATIO	32
-#define ADC_RATE			(DECIMATION_RATIO * IF_RATE)
+
+#define NCO_SIN_TABLE		((uint8_t*)0x1008F000)
+#define NCO_COS_TABLE		((uint8_t*)0x1008F800)
+#define NCO_TABLE_SIZE		0x800
+#define NCO_SAMPLES			1024
+//#define NCO_AMPL			32
+#define NCO_AMPL			64
+//#define NCO_AMPL			(SHRT_MAX / 128)
+//#define NCO_AMPL			(SHRT_MAX / 64)
+//#define NCO_AMPL			(SHRT_MAX / 32)
+//#define NCO_AMPL			(SHRT_MAX / 16)
+//#define NCO_AMPL			(SHRT_MAX / 4)
+
+#define I_FIR_STATE			((q15_t*)0x10080000)
+#define I_FIR_BUFFER		((q15_t*)0x10080040)
+#define Q_FIR_STATE			((q15_t*)0x10084040)
+#define Q_FIR_BUFFER		((q15_t*)0x10084080)
+/*  0x10000 / 2 / 32 */
+#define FIR_BUFFER_SIZE		0x400
+#define FIR_STATE_SIZE		0x40
+#define FIR_GAINBITS		4	/* 0 ~ 6 */
+
+#define DEMOD_BUFFER 		((q15_t*)0x10088000)
+#define DEMOD_BUFFER_SIZE	0x800
+#define DEMOD_GAINBITS		6	/* 0 ~ 6 */
+
+#define RESAMPLE_STATE 		((q15_t*)0x10089000)
+#define RESAMPLE_STATE_SIZE	0x100
+#define RESAMPLE_BUFFER 	((q15_t*)0x10089100)
+#define RESAMPLE_BUFFER_SIZE 0x400
+#define RESAMPLE_GAINBITS	5	/* 0 ~ 6 */
+
+#define AUDIO_BUFFER 		((q15_t*)0x1008A000)
+#define AUDIO_BUFFER_SIZE	0x2000
+#define AUDIO_TEST_BUFFER 	((q15_t*)0x1008C000)
+
+
 
 // dsp.c
 extern void ConfigureNCO(float32_t freq);
@@ -35,6 +74,7 @@ extern void ui_process();
 // clkcfg.h
 extern void setup_systemclock();
 extern void setup_pll0audio(uint32_t msel, uint32_t nsel, uint32_t psel);
+extern void setup_i2s_clock(LPC_I2Sn_Type *I2Sx, uint32_t Freq, uint8_t TRMode);
 
 
 extern volatile int32_t capture_count;

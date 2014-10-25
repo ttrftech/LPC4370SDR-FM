@@ -10,49 +10,7 @@
 #include "meas.h"
 #include "fmreceiver.h"
 
-#if 0
-#define AUDIO_RATE			48000
-#define IF_RATE				(13 * AUDIO_RATE / 2)
-#define DECIMATION_RATIO	32
-#define ADC_RATE			(DECIMATION_RATIO * IF_RATE)
-#define CAPTUREBUFFER		((uint8_t*)0x20000000)
-#endif
 
-
-#define NCO_SIN_TABLE		((uint8_t*)0x1008F000)
-#define NCO_COS_TABLE		((uint8_t*)0x1008F800)
-#define NCO_TABLE_SIZE		0x800
-#define NCO_SAMPLES			1024
-//#define NCO_AMPL			32
-#define NCO_AMPL			64
-//#define NCO_AMPL			(SHRT_MAX / 128)
-//#define NCO_AMPL			(SHRT_MAX / 64)
-//#define NCO_AMPL			(SHRT_MAX / 32)
-//#define NCO_AMPL			(SHRT_MAX / 16)
-//#define NCO_AMPL			(SHRT_MAX / 4)
-
-#define I_FIR_STATE			((q15_t*)0x10080000)
-#define I_FIR_BUFFER		((q15_t*)0x10080040)
-#define Q_FIR_STATE			((q15_t*)0x10084040)
-#define Q_FIR_BUFFER		((q15_t*)0x10084080)
-/*  0x10000 / 2 / 32 */
-#define FIR_BUFFER_SIZE		0x400
-#define FIR_STATE_SIZE		0x40
-#define FIR_GAINBITS		4	/* 0 ~ 6 */
-
-#define DEMOD_BUFFER 		((q15_t*)0x10088000)
-#define DEMOD_BUFFER_SIZE	0x800
-#define DEMOD_GAINBITS		6	/* 0 ~ 6 */
-
-#define RESAMPLE_STATE 		((q15_t*)0x10089000)
-#define RESAMPLE_STATE_SIZE	0x100
-#define RESAMPLE_BUFFER 	((q15_t*)0x10089100)
-#define RESAMPLE_BUFFER_SIZE 0x400
-#define RESAMPLE_GAINBITS	5	/* 0 ~ 6 */
-
-#define AUDIO_BUFFER 		((q15_t*)0x1008A000)
-#define AUDIO_BUFFER_SIZE	0x2000
-#define AUDIO_TEST_BUFFER 	((q15_t*)0x1008C000)
 
 /*
  * DSP Processing
@@ -323,11 +281,11 @@ struct {
 } resample_state;
 
 volatile struct {
-	int write_current;
-	int write_total;
-	int read_total;
-	int read_current;
-	int rebuffer_count;
+	uint16_t write_current;
+	uint16_t write_total;
+	uint16_t read_total;
+	uint16_t read_current;
+	uint16_t rebuffer_count;
 } audio_state;
 
 void
@@ -397,7 +355,7 @@ __RAMFUNC(RAM)
 void
 audio_rebuffer()
 {
-	int d = audio_state.write_current - audio_state.read_current;
+	uint16_t d = audio_state.write_current - audio_state.read_current;
 	d %= AUDIO_BUFFER_SIZE / 2;
 	if (d > REBUFFER_THRESHOLD) {
 		audio_state.read_current = (audio_state.write_current - REBUFFER_WR_GAP) % (AUDIO_BUFFER_SIZE / 2);
@@ -433,7 +391,7 @@ void DMA_IRQHandler (void)
 //	LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
 
 	//TOGGLE_MEAS_PIN_3();
-	SET_MEAS_PIN_3();
+	//SET_MEAS_PIN_3();
     if ((capture_count & 1) == 0) {
     	cic_decimate_i(&cic_i, CAPTUREBUFFER0, CAPTUREBUFFER_SIZEHALF);
     	cic_decimate_q(&cic_q, CAPTUREBUFFER0, CAPTUREBUFFER_SIZEHALF);
@@ -444,8 +402,8 @@ void DMA_IRQHandler (void)
 	fir_filter_iq();
 	fm_demod();
 	resample_fir_filter();
-	audio_rebuffer();
-    CLR_MEAS_PIN_3();
+	//audio_rebuffer();
+    //CLR_MEAS_PIN_3();
     capture_count ++;
 
     {
@@ -464,7 +422,8 @@ void I2S0_IRQHandler()
 {
 #if 1
 	uint32_t txLevel = I2S_GetLevel(LPC_I2S0, I2S_TX_MODE);
-	if (txLevel <= 4) {
+	SET_MEAS_PIN_3();
+	if (txLevel < 8) {
 		// Fill the remaining FIFO
 		int cur = audio_state.read_current;
 		int16_t *buffer = (int16_t*)AUDIO_BUFFER;
@@ -478,6 +437,7 @@ void I2S0_IRQHandler()
 		}
 		audio_state.read_current = cur;
 	}
+	CLR_MEAS_PIN_3();
 #endif
 }
 

@@ -166,8 +166,16 @@ static struct {
 } uistat;
 
 #define CHANNEL_MAX	9
-#define TP_MAX		4
+#define TP_MAX		10
 #define FREQ_STEP	100000
+
+extern volatile struct {
+	uint16_t write_current;
+	uint16_t write_total;
+	uint16_t read_total;
+	uint16_t read_current;
+	uint16_t rebuffer_count;
+} audio_state;
 
 void
 ui_update()
@@ -200,6 +208,16 @@ ui_update()
 		case 4:
 			sprintf(buf, "AUD:%04x", *(uint16_t*)0x1008A000);
 			break;
+		case 5:
+			sprintf(buf, "RBF:%d", audio_state.rebuffer_count);
+			break;
+		case 6:
+		{
+			uint16_t d = audio_state.write_current - audio_state.read_current;
+			d %= AUDIO_BUFFER_SIZE / 2;
+			sprintf(buf, "D:%d", d);
+			break;
+		}
 		default:
 			sprintf(buf, "undef");
 			break;

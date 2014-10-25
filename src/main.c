@@ -389,7 +389,7 @@ static void ConfigureTLV320(uint32_t rate)
     I2S_ModeConfig(LPC_I2S0, &i2sMode, I2S_TX_MODE);
 
     // Configure sampling frequency
-    I2S_FreqConfig(LPC_I2S0, rate, I2S_TX_MODE);
+    setup_i2s_clock(LPC_I2S0, rate, I2S_TX_MODE);
 
     I2S_Stop(LPC_I2S0, I2S_TX_MODE);
 

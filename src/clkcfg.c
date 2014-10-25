@@ -1,6 +1,7 @@
 #include <lpc43xx.h>
 #include <lpc43xx_cgu.h>
 #include <lpc43xx_emc.h>
+#include <lpc43xx_i2s.h>
 
 #include "fmreceiver.h"
 
@@ -124,23 +125,24 @@ void setup_pll0audio(uint32_t msel, uint32_t nsel, uint32_t psel)
 {
   uint32_t ClkSrc;
 
-//  CGU_EnableEntity(CGU_BASE_PERIPH, DISABLE);
+  //CGU_EnableEntity(CGU_BASE_PERIPH, DISABLE);
   CGU_EnableEntity(CGU_BASE_VADC, DISABLE);
+
+  /* source = XTAL OSC 12 MHz */
+  ClkSrc = CGU_CLKSRC_XTAL_OSC;
 
   /* disable clock, disable skew enable, power down pll,
   * (dis/en)able post divider, (dis/en)able pre-divider,
   * disable free running mode, disable bandsel,
   * enable up limmiter, disable bypass
   */
-  LPC_CGU->PLL0AUDIO_CTRL = (6 << 24)   /* source = XTAL OSC 12 MHz */
-                            | _BIT(0);  /* power down */
+  LPC_CGU->PLL0AUDIO_CTRL = (ClkSrc << 24) | _BIT(0);  /* power down */
 
   /* set NDEC, PDEC and MDEC register */
   LPC_CGU->PLL0AUDIO_NP_DIV = (FindNDEC(nsel)<<12) | (FindPDEC(psel) << 0);
   LPC_CGU->PLL0AUDIO_MDIV = FindMDEC(msel);
 
-  LPC_CGU->PLL0AUDIO_CTRL = (6 << 24)   /* source = XTAL OSC 12 MHz */
-                            | (6<< 12);     // fractional divider off and bypassed
+  LPC_CGU->PLL0AUDIO_CTRL = (ClkSrc << 24) | (6<< 12);     // fractional divider off and bypassed
 
   /* wait for lock */
   while (!(LPC_CGU->PLL0AUDIO_STAT & 1));
@@ -148,13 +150,92 @@ void setup_pll0audio(uint32_t msel, uint32_t nsel, uint32_t psel)
   /* enable clock output */
   LPC_CGU->PLL0AUDIO_CTRL |= (1<<4); /* CLKEN */
 
-  ClkSrc = (LPC_CGU->PLL0AUDIO_CTRL & CGU_CTRL_SRC_MASK)>>24;
   CGU_ClockSourceFrequency[CGU_CLKSRC_PLL0_AUDIO] =
-    (msel * CGU_ClockSourceFrequency[ClkSrc] ) / (psel * nsel);
+    msel * (CGU_ClockSourceFrequency[ClkSrc] / (psel * nsel));
 
-  CGU_UpdateClock();
+  //CGU_UpdateClock();
 
   // Re-enable the clocks that uses PLL0AUDIO
-//  CGU_EnableEntity(CGU_BASE_PERIPH, ENABLE);
+  //CGU_EnableEntity(CGU_BASE_PERIPH, ENABLE);
   CGU_EnableEntity(CGU_BASE_VADC, ENABLE);
+}
+
+void setup_i2s_clock(LPC_I2Sn_Type *I2Sx, uint32_t Freq, uint8_t TRMode)
+{
+	/* Calculate bit rate
+	 * The formula is:
+	 *      bit_rate = channel*wordwidth - 1
+	 * 48kHz sample rate for 16 bit stereo date requires
+	 * a bit rate of 48000*16*2=1536MHz (MCLK)
+	 */
+	uint32_t i2sPclk;
+	uint64_t divider;
+	uint8_t bitrate, channel, wordwidth;
+	uint32_t x, y;
+	uint16_t dif;
+	uint16_t error;
+	uint16_t x_divide, y_divide;
+	uint16_t ErrorOptimal = 0xFFFF;
+	int32_t N;
+
+	CGU_EntityConnect(CGU_CLKSRC_PLL0_AUDIO, CGU_BASE_APB1);
+	i2sPclk = CGU_GetPCLKFrequency(CGU_PERIPHERAL_I2S);
+	channel = 1;
+	wordwidth = 16;
+	bitrate = 2 * wordwidth - 1;
+
+	/* Calculate X and Y divider
+	 * The MCLK rate for the I2S transmitter is determined by the value
+	 * in the I2STXRATE/I2SRXRATE register. The required I2STXRATE/I2SRXRATE
+	 * setting depends on the desired audio sample rate desired, the format
+	 * (stereo/mono) used, and the data size.
+	 * The formula is:
+	 * 		I2S_MCLK = PCLK * (X/Y) / 2
+	 * We have:
+	 * 		I2S_MCLK = Freq * bit_rate * I2Sx->TXBITRATE;
+	 * So: (X/Y) = (Freq * bit_rate * I2Sx->TXBITRATE)/PCLK*2
+	 * We use a loop function to chose the most suitable X,Y value
+	 */
+
+	/* divider is a fixed point number with 16 fractional bits */
+	divider = ((uint64_t)(Freq *( bitrate+1) * 2)<<16) / i2sPclk;
+
+	/* find N that make x/y <= 1 -> divider <= 2^16 */
+	for(N=64;N>0;N--){
+		if((divider*N) < (1<<16)) break;
+	}
+
+	if(N == 0) return;
+
+	divider *= N;
+
+	for (y = 255; y > 0; y--) {
+		x = y * divider;
+		if(x & (0xFF000000)) continue;
+		dif = x & 0xFFFF;
+		if(dif>0x8000) error = 0x10000-dif;
+		else error = dif;
+		if (error == 0)
+		{
+			y_divide = y;
+			break;
+		}
+		else if (error < ErrorOptimal)
+		{
+			ErrorOptimal = error;
+			y_divide = y;
+		}
+	}
+	x_divide = ((uint64_t)y_divide * Freq *( bitrate+1)* N * 2)/i2sPclk;
+	if(x_divide >= 256) x_divide = 0xFF;
+	if(x_divide == 0) x_divide = 1;
+	if (TRMode == I2S_TX_MODE)// Transmitter
+	{
+		I2Sx->TXBITRATE = N - 1;
+		I2Sx->TXRATE = y_divide | (x_divide << 8);
+	} else //Receiver
+	{
+		I2Sx->RXBITRATE = N - 1;
+		I2Sx->RXRATE = y_divide | (x_divide << 8);
+	}
 }
