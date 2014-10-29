@@ -256,6 +256,9 @@ ui_init()
 	uistat.freq = 82500000;
 	uistat.tp = 0;
 	ui_update();
+
+	nco_set_frequency(uistat.freq);
+	audio_set_gain(uistat.gain);
 }
 
 void
@@ -284,7 +287,7 @@ ui_process()
 				uistat.freq += FREQ_STEP;
 			if ((status & ENCODER_DOWN))
 				uistat.freq -= FREQ_STEP;
-			ConfigureNCO(uistat.freq);
+			nco_set_frequency(uistat.freq);
 		} else if (uistat.mode == CHANNEL) {
 			if ((status & ENCODER_UP) && uistat.channel < CHANNEL_MAX)
 				uistat.channel++;

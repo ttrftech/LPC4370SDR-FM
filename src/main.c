@@ -27,11 +27,9 @@
 #include <arm_math.h>
 
 #include "fmreceiver.h"
+#include "vadc.h"
 
 
-#define VADC_DMA_WRITE  7
-#define VADC_DMA_READ   8
-#define VADC_DMA_READ_SRC  (LPC_VADC_BASE + 512)  /* VADC FIFO */
 #define FIFO_SIZE       8
 
 #define DMA_NUM_LLI_TO_USE    16
@@ -53,12 +51,6 @@ static GPDMA_LLI_Type DMA_Stuff[DMA_NUM_LLI_TO_USE];
 //#define ADCCLK_MATCHVALUE	(8 - 1)  // 40MHz / 8 = 5MHz
 //#define ADCCLK_MATCHVALUE	(16 - 1)  // 40MHz / 16 = 2.5MHz
 #define ADCCLK_DGECI 0
-
-#define SETTINGS_GPIO_IN    (PUP_DISABLE | PDN_DISABLE | SLEWRATE_SLOW | INBUF_ENABLE  | FILTER_ENABLE)
-#define SETTINGS_GPIO_OUT   (PUP_DISABLE | PDN_DISABLE | SLEWRATE_SLOW |                 FILTER_ENABLE)
-#define SETTINGS_SGPIO      (PDN_DISABLE | PUP_DISABLE |                 INBUF_ENABLE                 )
-#define SETTINGS_SPIFI      (PUP_DISABLE | PDN_DISABLE | SLEWRATE_SLOW | INBUF_ENABLE  | FILTER_ENABLE)
-#define SETTINGS_SSP        (PUP_DISABLE | PDN_DISABLE | SLEWRATE_SLOW | INBUF_ENABLE  | FILTER_ENABLE)
 
 volatile int32_t capture_count;
 
@@ -133,8 +125,6 @@ static void VADC_SetupDMA(void)
   NVIC_EnableIRQ(DMA_IRQn);
 }
 
-#define RGU_SIG_VADC 60
-
 static void VADC_Init(void)
 {
   CGU_EntityConnect(CGU_CLKSRC_PLL0_AUDIO, CGU_BASE_VADC);
@@ -146,9 +136,6 @@ static void VADC_Init(void)
   // Reset the VADC block
   RGU_SoftReset(RGU_SIG_VADC);
   while(RGU_GetSignalStatus(RGU_SIG_VADC));
-
-  // Clear FIFO
-  LPC_VADC->FLUSH = 1;
 
   // Disable the VADC interrupt
   NVIC_DisableIRQ(VADC_IRQn);
@@ -172,34 +159,9 @@ static void VADC_Init(void)
     (FIFO_SIZE<<1);  /* FIFO_LEVEL:       When FIFO contains this or more samples raise FIFO_FULL irq and DMA_Read_Req, default is 8 */
 
   // Descriptors:
-  if (ADCCLK_MATCHVALUE == 0)
-  {
-    // A matchValue of 0 requires special handling to prevent a automatic start.
-    // For more information see the "Appendix A Errata" of the VADC manual.
-    LPC_VADC->DSCR_STS =
-      (1<<0) |       /* ACT_TABLE:        0=table 0 is active, 1=table 1 is active */
-      (0<<1);        /* ACT_DESCRIPTOR:   ID of the descriptor that is active */
-
-    LPC_VADC->DESCRIPTOR_1[0] =
-      (0<<0) |       /* CHANNEL_NR:    0=convert input 0, 1=convert input 1, ..., 5=convert input 5 */
-      (0<<3) |       /* HALT:          0=continue with next descriptor after this one, 1=halt after this and restart at a new trigger */
-      (0<<4) |       /* INTERRUPT:     1=raise interrupt when ADC result is available */
-      (0<<5) |       /* POWER_DOWN:    1=power down after this conversion */
-      (2<<6) |       /* BRANCH:        0=continue with next descriptor (wraps around after top) */
-                     /*                1=branch to the first descriptor in this table */
-                     /*                2=swap tables and branch to the first descriptor of the new table */
-                     /*                3=reserved (do not store sample). continue with next descriptor (wraps around the top) */
-      (1<<8)  |      /* MATCH_VALUE:   Evaluate this desciptor when descriptor timer value is equal to match value */
-      (0<<22) |      /* THRESHOLD_SEL: 0=no comparison, 1=THR_A, 2=THR_B */
-      (1<<24) |      /* RESET_TIME:    1=reset descriptor timer */
-      (1UL<<31);     /* UPDATE_TABLE:  1=update table with all 8 descriptors of this table */
-  }
-  else
-  {
-    LPC_VADC->DSCR_STS =
+  LPC_VADC->DSCR_STS =
       (0<<0) |       /* ACT_TABLE:        0=table 0 is active, 1=table 1 is active */
       (0<<1);        /* ACT_DESCRIPTOR:   ID of the descriptor that is active */
-  }
 
   LPC_VADC->CONFIG = /* configuration register */
     (1<<0) |        /* TRIGGER_MASK:     0=triggers off, 1=SW trigger, 2=EXT trigger, 3=both triggers */
@@ -208,21 +170,19 @@ static void VADC_Init(void)
     (0<<5) |        /* CHANNEL_ID_EN:    0=don't add, 1=add channel id to FIFO output data */
     (0x90<<6);      /* RECOVERY_TIME:    ADC recovery time from power down, default is 0x90 */
 
-  {
-    LPC_VADC->DESCRIPTOR_0[0] =
-      (0<<0) |       /* CHANNEL_NR:    0=convert input 0, 1=convert input 1, ..., 5=convert input 5 */
-      (0<<3) |       /* HALT:          0=continue with next descriptor after this one, 1=halt after this and restart at a new trigger */
-      (0<<4) |       /* INTERRUPT:     1=raise interrupt when ADC result is available */
-      (0<<5) |       /* POWER_DOWN:    1=power down after this conversion */
-      (1<<6) |       /* BRANCH:        0=continue with next descriptor (wraps around after top) */
-                     /*                1=branch to the first descriptor in this table */
-                     /*                2=swap tables and branch to the first descriptor of the new table */
-                     /*                3=reserved (do not store sample). continue with next descriptor (wraps around the top) */
-      (ADCCLK_MATCHVALUE<<8)  |    /* MATCH_VALUE:   Evaluate this desciptor when descriptor timer value is equal to match value */
-      (0<<22) |      /* THRESHOLD_SEL: 0=no comparison, 1=THR_A, 2=THR_B */
-      (1<<24) |      /* RESET_TIME:    1=reset descriptor timer */
-      (1UL<<31);       /* UPDATE_TABLE:  1=update table with all 8 descriptors of this table */
-  }
+  LPC_VADC->DESCRIPTOR_0[0] =
+	  (0<<0) |       /* CHANNEL_NR:    0=convert input 0, 1=convert input 1, ..., 5=convert input 5 */
+	  (0<<3) |       /* HALT:          0=continue with next descriptor after this one, 1=halt after this and restart at a new trigger */
+	  (0<<4) |       /* INTERRUPT:     1=raise interrupt when ADC result is available */
+	  (0<<5) |       /* POWER_DOWN:    1=power down after this conversion */
+	  (1<<6) |       /* BRANCH:        0=continue with next descriptor (wraps around after top) */
+					 /*                1=branch to the first descriptor in this table */
+					 /*                2=swap tables and branch to the first descriptor of the new table */
+					 /*                3=reserved (do not store sample). continue with next descriptor (wraps around the top) */
+	  (ADCCLK_MATCHVALUE<<8)  |    /* MATCH_VALUE:   Evaluate this desciptor when descriptor timer value is equal to match value */
+	  (0<<22) |      /* THRESHOLD_SEL: 0=no comparison, 1=THR_A, 2=THR_B */
+	  (1<<24) |      /* RESET_TIME:    1=reset descriptor timer */
+	  (1UL<<31);       /* UPDATE_TABLE:  1=update table with all 8 descriptors of this table */
 
   LPC_VADC->ADC_SPEED =
     ADCCLK_DGECI;   /* DGECx:      For CRS=3 all should be 0xF, for CRS=4 all should be 0xE, */
@@ -235,11 +195,6 @@ static void VADC_Init(void)
     (0 << 16) |     /* TWOS:         0=offset binary, 1=two's complement */
     (1 << 17) |     /* POWER_SWITCH: 0=ADC is power gated, 1=ADC is active */
     (1 << 18);      /* BGAP_SWITCH:  0=ADC bandgap reg is power gated, 1=ADC bandgap is active */
-
-//  LPC_VADC->SET_EN0 = STATUS0_FIFO_FULL_MASK;// only care about FIFO_FULL
-
-  // Enable interrupts
-  //NVIC_EnableIRQ(VADC_IRQn);
 }
 
 static void VADC_Start(void)
@@ -268,19 +223,6 @@ static void VADC_Stop(void)
   while(RGU_GetSignalStatus(RGU_SIG_VADC));
 }
 
-static void priorityConfig()
-{
-  // High - Copying of samples
-  NVIC_SetPriority(DMA_IRQn,   ((0x01<<3)|0x01));
-  NVIC_SetPriority(I2S0_IRQn,  ((0x02<<3)|0x01));
-
-  // Low - Communication
-  NVIC_SetPriority(USB0_IRQn, ((0x03<<3)|0x01));
-  NVIC_SetPriority(USB1_IRQn, ((0x03<<3)|0x01));
-  NVIC_SetPriority(I2C0_IRQn, ((0x03<<3)|0x01));
-}
-
-
 static int I2CWrite(uint8_t addr, uint8_t data0, uint8_t data1)
 {
 	I2C_M_SETUP_Type txsetup;
@@ -304,7 +246,7 @@ static int I2CWrite(uint8_t addr, uint8_t data0, uint8_t data1)
 void audio_set_gain(int gain)
 {
 	if (gain < -6)
-		gain = 0x40;
+		gain = 0x40; // mute
 	else if (gain > 29)
 		gain = 29;
 	else
@@ -315,7 +257,7 @@ void audio_set_gain(int gain)
 	I2CWrite(0x18, 0x11, gain); /* HPR Driver Gain */
 }
 
-static void ConfigureTLV320(uint32_t rate)
+static void i2s_init(uint32_t rate)
 {
     I2S_CFG_Type i2sCfg;
     I2S_MODEConf_Type i2sMode;
@@ -365,7 +307,7 @@ static void ConfigureTLV320(uint32_t rate)
     scu_pinmux(0x3, 4, MD_PLN_FAST, FUNC5);     // WS
     scu_pinmux(0xF, 4, MD_PLN_FAST, FUNC6);    // MCLK
 
-	// output XTAL_OSC to TP_CLK0 for MCLK
+	// for MCLK output XTAL_OSC(12MHz) to TP_CLK0
 	LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_XTAL_OSC << 24;
 	LPC_SCU->SFSCLK_0 = 0x1;
 
@@ -399,35 +341,37 @@ static void ConfigureTLV320(uint32_t rate)
     NVIC_EnableIRQ(I2S0_IRQn);
 }
 
+static void interrupt_priority()
+{
+  // High - Copying of samples
+  NVIC_SetPriority(DMA_IRQn,   ((0x01<<3)|0x01));
+  NVIC_SetPriority(I2S0_IRQn,  ((0x02<<3)|0x01));
+
+  // Low - Communication
+  NVIC_SetPriority(USB0_IRQn, ((0x03<<3)|0x01));
+  NVIC_SetPriority(USB1_IRQn, ((0x03<<3)|0x01));
+  NVIC_SetPriority(I2C0_IRQn, ((0x03<<3)|0x01));
+}
+
 int main(void) {
     setup_systemclock();
     setup_pll0audio(PLL0_MSEL, PLL0_NSEL, PLL0_PSEL);
+    interrupt_priority();
 
     // Setup SysTick Timer to interrupt at 1 msec intervals
 	SysTick_Config(CGU_GetPCLKFrequency(CGU_PERIPHERAL_M4CORE)/1000);
-    priorityConfig();
 
-    VADC_Stop();
-
-    //printf("Hello SDR!\n");
+	TESTPOINT_INIT();
     LED_INIT();
+    //printf("Hello SDR!\n");
+
     ui_init();
 	dsp_init();
 
-	scu_pinmux(0x6, 11, SETTINGS_GPIO_OUT, FUNC0); //GPIO3[7], available on J7-14
-	LPC_GPIO_PORT->DIR[3] |= (1UL << 7);
-	LPC_GPIO_PORT->SET[3] |= (1UL << 7);
-
-	//ConfigureNCO(80400000);
-	ConfigureNCO(82500000);
-	//ConfigureNCO(85200000);
-	ConfigureTLV320(48000);
 	VADC_Init();
     VADC_SetupDMA();
 
-	/* wait 5 msec */
-	//emc_WaitUS(5000);
-	//generate_test_tone(440);
+	i2s_init(48000);
 
 	VADC_Start();
 

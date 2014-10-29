@@ -4,13 +4,10 @@
 #include <lpc43xx_i2s.h>
 
 #include "fmreceiver.h"
+#include "vadc.h"
 
 /*! Frequency of external xtal */
 #define XTAL_FREQ  (12000000UL)
-
-#define CGU_BASE_VADC CGU_BASE_ENET_CSR
-#define VADC_IRQn RESERVED7_IRQn
-
 
 void setup_systemclock()
 {
@@ -170,7 +167,7 @@ void setup_i2s_clock(LPC_I2Sn_Type *I2Sx, uint32_t Freq, uint8_t TRMode)
 	 */
 	uint32_t i2sPclk;
 	uint64_t divider;
-	uint8_t bitrate, channel, wordwidth;
+	uint8_t bitrate, wordwidth;
 	uint32_t x, y;
 	uint16_t dif;
 	uint16_t error;
@@ -180,7 +177,6 @@ void setup_i2s_clock(LPC_I2Sn_Type *I2Sx, uint32_t Freq, uint8_t TRMode)
 
 	CGU_EntityConnect(CGU_CLKSRC_PLL0_AUDIO, CGU_BASE_APB1);
 	i2sPclk = CGU_GetPCLKFrequency(CGU_PERIPHERAL_I2S);
-	channel = 1;
 	wordwidth = 16;
 	bitrate = 2 * wordwidth - 1;
 

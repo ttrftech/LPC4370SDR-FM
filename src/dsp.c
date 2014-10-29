@@ -7,20 +7,14 @@
 #include <limits.h>
 #include <arm_math.h>
 #include "lpc43xx_i2s.h"
-#include "meas.h"
 #include "fmreceiver.h"
 
-
-
-/*
- * DSP Processing
- */
 
 #define NCO_CYCLE 1024
 #define NCO_SAMPLES 1024
 #define NCO_COS_OFFSET (NCO_CYCLE/4)
 
-void ConfigureNCO(float32_t freq)
+void nco_set_frequency(float32_t freq)
 {
 	int16_t *costbl = (int16_t*)NCO_SIN_TABLE;
 	int16_t *sintbl = (int16_t*)NCO_COS_TABLE;
@@ -271,8 +265,6 @@ q15_t resample_fir_coeff_odd[RESAMPLE_NUM_TAPS] = {
 		         -1,  -14,  -19,  -17,  -10,    0,    7,   11,   11,    7,    1,
 		         -3,   -6,   -7,   -5,   -2,    1,    0};
 
-// 312.5kHz * 2/13 -> 48.076923kHz
-
 struct {
 	int32_t index;
 	float deemphasis_mult;
@@ -295,8 +287,6 @@ deemphasis_init(int timeconst_us)
 	resample_state.deemphasis_mult = exp(-1e6/(timeconst_us * AUDIO_RATE));
 	resample_state.deemphasis_rest = 1 - resample_state.deemphasis_mult;
 }
-
-#define INDEX_STEP (int32_t)((312500 * 65536 * 2) / 48000)
 
 __RAMFUNC(RAM)
 void resample_fir_filter()
@@ -328,11 +318,10 @@ void resample_fir_filter()
 		// deemphasis with time constant
 		value = (float)acc * resample_state.deemphasis_rest + value * resample_state.deemphasis_mult;
 		dest[cur++] = __SSAT((int32_t)value >> (16 - RESAMPLE_GAINBITS), 16);
+		//dest[cur++] = __PKHBT(__SSAT((acc0 >> 15), 16), __SSAT((acc1 >> 15), 16), 16);
 		cur %= AUDIO_BUFFER_SIZE / 2;
 		audio_state.write_total++;
-		//dest[cur++] = __PKHBT(__SSAT((acc0 >> 15), 16), __SSAT((acc1 >> 15), 16), 16);
 		idx += 13;
-		//idx += INDEX_STEP;
 	}
 
 	resample_state.deemphasis_value = value;
@@ -348,17 +337,21 @@ void resample_fir_filter()
 }
 
 
-#define REBUFFER_THRESHOLD 	(6 * (AUDIO_BUFFER_SIZE/2) / 8)
-#define REBUFFER_WR_GAP 	(3 * (AUDIO_BUFFER_SIZE/2) / 8)
+#define REBUFFER_THRESHOLD0 	(1 * (AUDIO_BUFFER_SIZE/2) / 8)
+#define REBUFFER_THRESHOLD1 	(7 * (AUDIO_BUFFER_SIZE/2) / 8)
+#define REBUFFER_WR_GAP 		(4 * (AUDIO_BUFFER_SIZE/2) / 8)
 
 __RAMFUNC(RAM)
 void
-audio_rebuffer()
+audio_adjust_buffer()
 {
 	uint16_t d = audio_state.write_current - audio_state.read_current;
 	d %= AUDIO_BUFFER_SIZE / 2;
-	if (d > REBUFFER_THRESHOLD) {
-		audio_state.read_current = (audio_state.write_current - REBUFFER_WR_GAP) % (AUDIO_BUFFER_SIZE / 2);
+	if (d < REBUFFER_THRESHOLD0 || d > REBUFFER_THRESHOLD1) {
+		int cur = audio_state.write_current - REBUFFER_WR_GAP;
+		if (cur < 0)
+			cur += AUDIO_BUFFER_SIZE / 2;
+		audio_state.read_current = cur;
 		audio_state.rebuffer_count++;
 	}
 }
@@ -370,7 +363,6 @@ void generate_test_tone(int freq)
 	int samples = AUDIO_BUFFER_SIZE / 2;
 	int n = freq * samples / 48000;
 	for (i = 0; i < AUDIO_BUFFER_SIZE / 2; i++) {
-		//float res = arm_sin_f32((float)i * 2 * PI * 440 / 48000);
 		float res = arm_sin_f32(((float)i * 2.0 * PI * n) / 4096);
 		buf[i] = (int)(res * 20000.0);
 	}
@@ -402,7 +394,8 @@ void DMA_IRQHandler (void)
 	fir_filter_iq();
 	fm_demod();
 	resample_fir_filter();
-	//audio_rebuffer();
+
+	//audio_adjust_buffer();
     //CLR_MEAS_PIN_3();
     capture_count ++;
 
@@ -422,7 +415,7 @@ void I2S0_IRQHandler()
 {
 #if 1
 	uint32_t txLevel = I2S_GetLevel(LPC_I2S0, I2S_TX_MODE);
-	SET_MEAS_PIN_3();
+	TESTPOINT_ON();
 	if (txLevel < 8) {
 		// Fill the remaining FIFO
 		int cur = audio_state.read_current;
@@ -437,7 +430,7 @@ void I2S0_IRQHandler()
 		}
 		audio_state.read_current = cur;
 	}
-	CLR_MEAS_PIN_3();
+	TESTPOINT_OFF();
 #endif
 }
 
