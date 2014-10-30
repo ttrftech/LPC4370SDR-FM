@@ -9,6 +9,10 @@
 /*! Frequency of external xtal */
 #define XTAL_FREQ  (12000000UL)
 
+extern uint32_t CGU_ClockSourceFrequency[CGU_CLKSRC_NUM];
+
+
+
 void setup_systemclock()
 {
 	/* enable the crystal oscillator */
@@ -41,6 +45,8 @@ void setup_systemclock()
 	while((LPC_CGU->PLL1_STAT&1) == 0x0);
 
 	SystemCoreClock = 204000000;
+
+    CGU_ClockSourceFrequency[CGU_CLKSRC_PLL1] = SystemCoreClock;
 }
 
 #define PLL0_MSEL_MAX (1<<15)
@@ -115,8 +121,6 @@ static uint32_t FindPDEC(uint32_t psel)
       return x;
   }
 }
-
-extern uint32_t CGU_ClockSourceFrequency[CGU_CLKSRC_NUM];
 
 void setup_pll0audio(uint32_t msel, uint32_t nsel, uint32_t psel)
 {

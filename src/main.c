@@ -356,10 +356,10 @@ static void interrupt_priority()
 int main(void) {
     setup_systemclock();
     setup_pll0audio(PLL0_MSEL, PLL0_NSEL, PLL0_PSEL);
-    interrupt_priority();
-
     // Setup SysTick Timer to interrupt at 1 msec intervals
-	SysTick_Config(CGU_GetPCLKFrequency(CGU_PERIPHERAL_M4CORE)/1000);
+	SysTick_Config(CGU_GetPCLKFrequency(CGU_PERIPHERAL_M4CORE) / 1000);
+
+    interrupt_priority();
 
 	TESTPOINT_INIT();
     LED_INIT();

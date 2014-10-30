@@ -175,6 +175,24 @@ void fir_filter_iq()
 		q31_t acc1_q = 0;
 		uint32_t x0 = in_i[0];
 		uint32_t y0 = in_q[0];
+
+#if 1 /* unroll manually */
+#define STEP(j) \
+	do {uint32_t c0 = coeff[j]; \
+		uint32_t x2 = in_i[j+1]; \
+		uint32_t y2 = in_q[j+1]; \
+		acc0_i = __SMLAD(x0, c0, acc0_i); \
+		acc0_q = __SMLAD(y0, c0, acc0_q); \
+		acc1_i = __SMLADX(__PKHBT(x2, x0, 0), c0, acc1_i); \
+		acc1_q = __SMLADX(__PKHBT(y2, y0, 0), c0, acc1_q); \
+		x0 = x2; \
+		y0 = y2; } while(0)
+
+		STEP(0); STEP(1); STEP(2); STEP(3);
+		STEP(4); STEP(5); STEP(6); STEP(7);
+		STEP(8); STEP(9); STEP(10); STEP(11);
+		STEP(12); STEP(13); STEP(14); STEP(15);
+#else
 		for (j = 0; j < FIR_NUM_TAPS / 2; ) {
 			uint32_t c0 = coeff[j++];
 			uint32_t x2 = in_i[j];
@@ -186,6 +204,7 @@ void fir_filter_iq()
 			x0 = x2;
 			y0 = y2;
 		}
+#endif
 		dest[i*2] = __PKHBT(__SSAT((acc0_i >> 15), 16), __SSAT((acc0_q >> 15), 16), 16);
 		dest[i*2+1] = __PKHBT(__SSAT((acc1_i >> 15), 16), __SSAT((acc1_q >> 15), 16), 16);
 		in_i++;
@@ -382,8 +401,7 @@ void DMA_IRQHandler (void)
 	LPC_GPDMA->INTTCCLEAR = 1;
 //	LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
 
-	//TOGGLE_MEAS_PIN_3();
-	//SET_MEAS_PIN_3();
+	TESTPOINT_ON();
     if ((capture_count & 1) == 0) {
     	cic_decimate_i(&cic_i, CAPTUREBUFFER0, CAPTUREBUFFER_SIZEHALF);
     	cic_decimate_q(&cic_q, CAPTUREBUFFER0, CAPTUREBUFFER_SIZEHALF);
@@ -391,12 +409,15 @@ void DMA_IRQHandler (void)
     	cic_decimate_i(&cic_i, CAPTUREBUFFER1, CAPTUREBUFFER_SIZEHALF);
     	cic_decimate_q(&cic_q, CAPTUREBUFFER1, CAPTUREBUFFER_SIZEHALF);
     }
+	TESTPOINT_SPIKE();
 	fir_filter_iq();
+	TESTPOINT_SPIKE();
 	fm_demod();
+	TESTPOINT_SPIKE();
 	resample_fir_filter();
 
 	//audio_adjust_buffer();
-    //CLR_MEAS_PIN_3();
+	TESTPOINT_OFF();
     capture_count ++;
 
     {
@@ -415,7 +436,7 @@ void I2S0_IRQHandler()
 {
 #if 1
 	uint32_t txLevel = I2S_GetLevel(LPC_I2S0, I2S_TX_MODE);
-	TESTPOINT_ON();
+	//TESTPOINT_ON();
 	if (txLevel < 8) {
 		// Fill the remaining FIFO
 		int cur = audio_state.read_current;
@@ -430,7 +451,7 @@ void I2S0_IRQHandler()
 		}
 		audio_state.read_current = cur;
 	}
-	TESTPOINT_OFF();
+	//TESTPOINT_OFF();
 #endif
 }
 
@@ -439,5 +460,6 @@ dsp_init()
 {
 	memset(&cic_i, 0, sizeof cic_i);
 	memset(&cic_q, 0, sizeof cic_q);
-	deemphasis_init(75);
+	//deemphasis_init(75);
+	deemphasis_init(50);
 }

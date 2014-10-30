@@ -82,6 +82,7 @@ extern volatile int32_t capture_count;
 #define LED_INIT()	     (LPC_GPIO_PORT->DIR[0] |= (1UL << 8))
 #define LED_ON()		 (LPC_GPIO_PORT->SET[0] |= (1UL << 8))
 #define LED_OFF()		 (LPC_GPIO_PORT->CLR[0] = (1UL << 8))
+#define LED_TOGGLE()	 (LPC_GPIO_PORT->NOT[0] = (1UL << 8))
 
 #define TESTPOINT_INIT() \
 do {scu_pinmux(0x6, 11, PUP_DISABLE | PDN_DISABLE | SLEWRATE_SLOW | FILTER_ENABLE, FUNC0); \
@@ -89,5 +90,7 @@ do {scu_pinmux(0x6, 11, PUP_DISABLE | PDN_DISABLE | SLEWRATE_SLOW | FILTER_ENABL
 	LPC_GPIO_PORT->SET[3] |= (1UL << 7); } while(0)
 #define TESTPOINT_ON() 	(LPC_GPIO_PORT->SET[3] |= (1UL << 7))
 #define TESTPOINT_OFF()	(LPC_GPIO_PORT->CLR[3] = (1UL << 7))
+#define TESTPOINT_TOGGLE()	(LPC_GPIO_PORT->NOT[3] = (1UL << 7))
+#define TESTPOINT_SPIKE()	TESTPOINT_TOGGLE();TESTPOINT_TOGGLE()
 
 #endif /* __FMRECEIVER_H__ */
