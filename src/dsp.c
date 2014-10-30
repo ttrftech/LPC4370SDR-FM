@@ -16,8 +16,8 @@
 
 void nco_set_frequency(float32_t freq)
 {
-	int16_t *costbl = (int16_t*)NCO_SIN_TABLE;
-	int16_t *sintbl = (int16_t*)NCO_COS_TABLE;
+	int16_t *costbl = NCO_SIN_TABLE;
+	int16_t *sintbl = NCO_COS_TABLE;
 	int f;
 	int i;
 
@@ -40,6 +40,8 @@ q15_t fir_coeff[FIR_NUM_TAPS] = {
 };
 
 typedef struct {
+	q15_t *result;
+	int16_t *nco_base;
 	int32_t s0;
 	int32_t s1;
 	int32_t s2;
@@ -53,14 +55,13 @@ static CICState cic_i;
 static CICState cic_q;
 
 __RAMFUNC(RAM)
-void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
+void cic_decimate(CICState *cic, uint8_t *buf, int len)
 {
 	//const uint32_t offset = 0x08000800;
 	const uint32_t offset = 0x08800880;
-	int16_t *const result = (int16_t*)I_FIR_BUFFER;
-	uint32_t *capture = (uint32_t*)buf;
-	const uint32_t *nco_base = (uint32_t*)NCO_SIN_TABLE;
-	const uint32_t *nco = nco_base;
+	int16_t *const result = (int16_t*)(cic->result);
+	uint32_t *const capture = (uint32_t*)buf;
+	const uint32_t *const nco_base = (uint32_t*)(cic->nco_base);
 
 	int32_t s0 = cic->s0;
 	int32_t s1 = cic->s1;
@@ -69,76 +70,39 @@ void cic_decimate_i(CICState *cic, uint8_t *buf, int len)
 	int32_t d1 = cic->d1;
 	int32_t d2 = cic->d2;
 	int32_t e0, e1, e2;
-	uint32_t f;
-	uint32_t x;
-	int i, j, k, l;
+	int i, l;
 
 	l = cic->dest;
 	for (i = 0; i < len / 4; ) {
-		nco = nco_base;
+		int j;
+		const uint32_t *nco = nco_base;
 		for (j = 0; j < NCO_SAMPLES/2; ) {
+#if 1 /* unroll manually */
+#define CIC0()	do { \
+			uint32_t x = capture[i++]; \
+			uint32_t f = *nco++; \
+			x = __SSUB16(x, offset); \
+			s0 = __SMLAD(x, f, s0); \
+			s1 += s0; \
+			s2 += s1; \
+			j++; \
+		} while(0)
+			CIC0();CIC0();CIC0();CIC0();
+			CIC0();CIC0();CIC0();CIC0();
+			CIC0();CIC0();CIC0();CIC0();
+			CIC0();CIC0();CIC0();CIC0();
+#else
+			int k;
 			for (k = 0; k < DECIMATION_RATIO / 2; k++) {
-				x = capture[i++];
-				f = *nco++;
+				uint32_t x = capture[i++];
+				uint32_t f = *nco++;
 				x = __SSUB16(x, offset);
 				s0 = __SMLAD(x, f, s0);
 				s1 += s0;
 				s2 += s1;
 				j++;
 			}
-			e0 = d0 - s2;
-			d0 = s2;
-			e1 = d1 - e0;
-			d1 = e0;
-			e2 = d2 - e1;
-			d2 = e1;
-			result[l++] = __SSAT(e2 >> (16 - FIR_GAINBITS), 16);
-			l %=  FIR_BUFFER_SIZE/2;
-		}
-	}
-	cic->dest = l;
-	cic->s0 = s0;
-	cic->s1 = s1;
-	cic->s2 = s2;
-	cic->d0 = d0;
-	cic->d1 = d1;
-	cic->d2 = d2;
-}
-
-__RAMFUNC(RAM)
-void cic_decimate_q(CICState *cic, uint8_t *buf, int len)
-{
-	//const uint32_t offset = 0x08000800;
-	const uint32_t offset = 0x08800880;
-	int16_t *const result = (int16_t*)Q_FIR_BUFFER;
-	uint32_t *capture = (uint32_t*)buf;
-	const uint32_t *nco_base = (uint32_t*)NCO_COS_TABLE;
-	const uint32_t *nco = nco_base;
-
-	int32_t s0 = cic->s0;
-	int32_t s1 = cic->s1;
-	int32_t s2 = cic->s2;
-	int32_t d0 = cic->d0;
-	int32_t d1 = cic->d1;
-	int32_t d2 = cic->d2;
-	int32_t e0, e1, e2;
-	uint32_t f;
-	uint32_t x;
-	int i, j, k, l;
-
-	l = cic->dest;
-	for (i = 0; i < len / 4; ) {
-		nco = nco_base;
-		for (j = 0; j < NCO_SAMPLES/2; ) {
-			for (k = 0; k < 16; k++) {
-				x = capture[i++];
-				f = *nco++;
-				x = __SSUB16(x, offset);
-				s0 = __SMLAD(x, f, s0);
-				s1 += s0;
-				s2 += s1;
-				j++;
-			}
+#endif
 			e0 = d0 - s2;
 			d0 = s2;
 			e1 = d1 - e0;
@@ -403,11 +367,11 @@ void DMA_IRQHandler (void)
 
 	TESTPOINT_ON();
     if ((capture_count & 1) == 0) {
-    	cic_decimate_i(&cic_i, CAPTUREBUFFER0, CAPTUREBUFFER_SIZEHALF);
-    	cic_decimate_q(&cic_q, CAPTUREBUFFER0, CAPTUREBUFFER_SIZEHALF);
+    	cic_decimate(&cic_i, CAPTUREBUFFER0, CAPTUREBUFFER_SIZEHALF);
+    	cic_decimate(&cic_q, CAPTUREBUFFER0, CAPTUREBUFFER_SIZEHALF);
     } else {
-    	cic_decimate_i(&cic_i, CAPTUREBUFFER1, CAPTUREBUFFER_SIZEHALF);
-    	cic_decimate_q(&cic_q, CAPTUREBUFFER1, CAPTUREBUFFER_SIZEHALF);
+    	cic_decimate(&cic_i, CAPTUREBUFFER1, CAPTUREBUFFER_SIZEHALF);
+    	cic_decimate(&cic_q, CAPTUREBUFFER1, CAPTUREBUFFER_SIZEHALF);
     }
 	TESTPOINT_SPIKE();
 	fir_filter_iq();
@@ -460,6 +424,10 @@ dsp_init()
 {
 	memset(&cic_i, 0, sizeof cic_i);
 	memset(&cic_q, 0, sizeof cic_q);
+	cic_i.result = I_FIR_BUFFER;
+	cic_i.nco_base = NCO_SIN_TABLE;
+	cic_q.result = Q_FIR_BUFFER;
+	cic_q.nco_base = NCO_COS_TABLE;
 	//deemphasis_init(75);
 	deemphasis_init(50);
 }

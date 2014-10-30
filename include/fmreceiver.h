@@ -18,8 +18,8 @@
 #define CAPTUREBUFFER1		((uint8_t*)0x20008000)
 #define CAPTUREBUFFER_SIZEHALF	0x8000
 
-#define NCO_SIN_TABLE		((uint8_t*)0x1008F000)
-#define NCO_COS_TABLE		((uint8_t*)0x1008F800)
+#define NCO_SIN_TABLE		((int16_t*)0x1008F000)
+#define NCO_COS_TABLE		((int16_t*)0x1008F800)
 #define NCO_TABLE_SIZE		0x800
 #define NCO_SAMPLES			1024
 //#define NCO_AMPL			32
