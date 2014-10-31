@@ -130,7 +130,7 @@ void fir_filter_iq()
 	const uint32_t *in_q = (const uint32_t *)Q_FIR_STATE;
 	int32_t length = FIR_BUFFER_SIZE / sizeof(uint32_t);
 	uint32_t *dest = (uint32_t *)DEMOD_BUFFER;
-	int i, j;
+	int i;
 
 	for (i = 0; i < length; i++) {
 		q31_t acc0_i = 0;
@@ -157,6 +157,7 @@ void fir_filter_iq()
 		STEP(8); STEP(9); STEP(10); STEP(11);
 		STEP(12); STEP(13); STEP(14); STEP(15);
 #else
+		int j;
 		for (j = 0; j < FIR_NUM_TAPS / 2; ) {
 			uint32_t c0 = coeff[j++];
 			uint32_t x2 = in_i[j];
@@ -203,16 +204,47 @@ void fm_demod()
 	int i;
 
 	uint32_t x0 = fm_demod_state.last;
-	int32_t n;
+	int32_t n = __SMUAD(x0, x0) >> DEMOD_GAINBITS;
 	for (i = 0; i < length; i++) {
 		uint32_t x1 = src[i];
+#if 0
 		// I*(I-I0)-Q*(Q-Q0)
 		int32_t d = __SMUSDX(__SSUB16(x1, x0), x1);
 		// I^2 + Q^2
-		n = __SMUAD(x1, x1) >> (16 - DEMOD_GAINBITS);
+		n = __SMUAD(x1, x1) >> DEMOD_GAINBITS;
 		int32_t y = d / n;
-		dest[i] = y;
-		//dest[i] = __SSAT((y * ((1<<16) + ((y * y) >> 4) / 3)) >> 16, 16);
+		//dest[i] = y;
+		dest[i] = __SSAT(y, 16);
+		//dest[i] = __SSAT((y * ((1<<12) + (y>>2) * (y>>2) / 3)) >> 12, 16);
+#else
+#define AMPL_CONV (4*312e6f/(2*PI*150e3f))
+		int32_t re = __SMUAD(x1, x0);
+		int32_t im = __SMUSDX(x1, x0);
+		uint8_t neg = FALSE;
+		float32_t d;
+		float32_t ang = 0;
+		if (im < 0) {
+			im = -im;
+			neg = !neg;
+		}
+		if (re < 0) {
+			re = -re;
+			neg = !neg;
+		}
+		if (im >= re) {
+			d = (float)re / (float)im;
+			neg = !neg;
+			ang = -PI / 2;
+		} else {
+			d = (float)im / (float)re;
+		}
+		d = d / (0.98419158358617365f + d * (0.093485702629671305f + d * 0.19556307900617517f));
+		d += ang;
+		if (neg)
+			d = -d;
+        d *= AMPL_CONV;
+		dest[i] = __SSAT((int32_t)d, 16);
+#endif
 		x0 = x1;
 	}
 	fm_demod_state.last = x0;
@@ -255,6 +287,14 @@ struct {
 	float deemphasis_value;
 } resample_state;
 
+void
+set_deemphasis(int timeconst_us)
+{
+	resample_state.deemphasis_value = 0;
+	resample_state.deemphasis_mult = exp(-1e6/(timeconst_us * AUDIO_RATE));
+	resample_state.deemphasis_rest = 1 - resample_state.deemphasis_mult;
+}
+
 volatile struct {
 	uint16_t write_current;
 	uint16_t write_total;
@@ -262,14 +302,6 @@ volatile struct {
 	uint16_t read_current;
 	uint16_t rebuffer_count;
 } audio_state;
-
-void
-deemphasis_init(int timeconst_us)
-{
-	resample_state.deemphasis_value = 0;
-	resample_state.deemphasis_mult = exp(-1e6/(timeconst_us * AUDIO_RATE));
-	resample_state.deemphasis_rest = 1 - resample_state.deemphasis_mult;
-}
 
 __RAMFUNC(RAM)
 void resample_fir_filter()
@@ -363,7 +395,6 @@ void DMA_IRQHandler (void)
   if (LPC_GPDMA->INTTCSTAT & 1)
   {
 	LPC_GPDMA->INTTCCLEAR = 1;
-//	LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
 
 	TESTPOINT_ON();
     if ((capture_count & 1) == 0) {
@@ -383,6 +414,8 @@ void DMA_IRQHandler (void)
 	//audio_adjust_buffer();
 	TESTPOINT_OFF();
     capture_count ++;
+
+    //HALT_DMA(); // halt DMA for inspecting contents of buffer
 
     {
     	// toggle LED with every 1024 interrupts
@@ -428,6 +461,6 @@ dsp_init()
 	cic_i.nco_base = NCO_SIN_TABLE;
 	cic_q.result = Q_FIR_BUFFER;
 	cic_q.nco_base = NCO_COS_TABLE;
-	//deemphasis_init(75);
-	deemphasis_init(50);
+	//set_deemphasis(75);
+	set_deemphasis(50);
 }

@@ -177,6 +177,12 @@ extern volatile struct {
 	uint16_t rebuffer_count;
 } audio_state;
 
+extern struct {
+	uint32_t last;
+	int32_t carrier;
+} fm_demod_state;
+
+
 void
 ui_update()
 {
@@ -218,6 +224,9 @@ ui_update()
 			sprintf(buf, "D:%d", d);
 			break;
 		}
+		case 7:
+			sprintf(buf, "CAR:%d", fm_demod_state.carrier);
+			break;
 		default:
 			sprintf(buf, "undef");
 			break;

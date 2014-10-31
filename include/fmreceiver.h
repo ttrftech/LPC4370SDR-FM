@@ -41,7 +41,8 @@
 
 #define DEMOD_BUFFER 		((q15_t*)0x10088000)
 #define DEMOD_BUFFER_SIZE	0x800
-#define DEMOD_GAINBITS		6	/* 0 ~ 6 */
+//#define DEMOD_GAINBITS		6	/* 0 ~ 6 */
+#define DEMOD_GAINBITS		10	/* 0 ~ 6 */
 
 #define RESAMPLE_STATE 		((q15_t*)0x10089000)
 #define RESAMPLE_STATE_SIZE	0x100
@@ -92,5 +93,7 @@ do {scu_pinmux(0x6, 11, PUP_DISABLE | PDN_DISABLE | SLEWRATE_SLOW | FILTER_ENABL
 #define TESTPOINT_OFF()	(LPC_GPIO_PORT->CLR[3] = (1UL << 7))
 #define TESTPOINT_TOGGLE()	(LPC_GPIO_PORT->NOT[3] = (1UL << 7))
 #define TESTPOINT_SPIKE()	TESTPOINT_TOGGLE();TESTPOINT_TOGGLE()
+
+#define HALT_DMA()	(LPC_GPDMA->C0CONFIG |= (1 << 18))
 
 #endif /* __FMRECEIVER_H__ */

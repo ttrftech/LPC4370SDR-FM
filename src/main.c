@@ -55,7 +55,7 @@ static GPDMA_LLI_Type DMA_Stuff[DMA_NUM_LLI_TO_USE];
 volatile int32_t capture_count;
 
 
-static void VADC_SetupDMA(void)
+void VADC_SetupDMA(void)
 {
   int i;
   uint32_t transfersize;
@@ -125,7 +125,7 @@ static void VADC_SetupDMA(void)
   NVIC_EnableIRQ(DMA_IRQn);
 }
 
-static void VADC_Init(void)
+void VADC_Init(void)
 {
   CGU_EntityConnect(CGU_CLKSRC_PLL0_AUDIO, CGU_BASE_VADC);
   CGU_EnableEntity(CGU_BASE_VADC, ENABLE);
@@ -197,13 +197,13 @@ static void VADC_Init(void)
     (1 << 18);      /* BGAP_SWITCH:  0=ADC bandgap reg is power gated, 1=ADC bandgap is active */
 }
 
-static void VADC_Start(void)
+void VADC_Start(void)
 {
 	capture_count = 0;
 	LPC_VADC->TRIGGER = 1;
 }
 
-static void VADC_Stop(void)
+void VADC_Stop(void)
 {
   // disable DMA
   LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
@@ -304,7 +304,6 @@ static void i2s_init(uint32_t rate)
     //scu_pinmux(0xC, 12, MD_PLN_FAST, FUNC6);    // SD
 /**/scu_pinmux(0x3, 1, MD_PLN_FAST, FUNC0);     // WS
 /**/scu_pinmux(0x3, 2, MD_PLN_FAST, FUNC0);    // SD
-    scu_pinmux(0x3, 4, MD_PLN_FAST, FUNC5);     // WS
     scu_pinmux(0xF, 4, MD_PLN_FAST, FUNC6);    // MCLK
 
 	// for MCLK output XTAL_OSC(12MHz) to TP_CLK0
