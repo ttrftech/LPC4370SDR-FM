@@ -281,7 +281,7 @@ extern unsigned int __bss_section_table_end;
 // library.
 //
 //*****************************************************************************
-//__attribute__ ((section(".after_vectors")))
+__attribute__ ((section(".after_vectors")))
 void
 ResetISR(void) {
 
