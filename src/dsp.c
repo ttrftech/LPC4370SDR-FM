@@ -264,6 +264,8 @@ struct {
 	float32_t delta_cos[12];
 	float32_t delta_sin[12];
 	int16_t corr;
+	int32_t sdi;
+	int32_t sdq;
 } stereo_separate_state;
 
 void
@@ -278,6 +280,8 @@ stereo_separate_init(float32_t pilotfreq)
 	stereo_separate_state.step_cos = stereo_separate_state.basestep_cos;
 	stereo_separate_state.step_sin = stereo_separate_state.basestep_sin;
 	stereo_separate_state.corr = 0;
+	stereo_separate_state.sdi = 0;
+	stereo_separate_state.sdq = 0;
 	angle /= 512.0f;
 	for (i = 0; i < 12; i++) {
 		stereo_separate_state.delta_cos[i] = arm_cos_f32(angle);
@@ -303,7 +307,7 @@ void stereo_separate()
 
 	for (i = 0; i < length; i++) {
 		int16_t x1 = src[i];
-		dest[i] = x1 * (carr_i * carr_q);
+		dest[i] = x1 * (2 * carr_i * carr_q);
 		di += carr_i * x1;
 		dq += carr_q * x1;
 		float32_t new_i = carr_i * step_cos - carr_q * step_sin;
@@ -314,6 +318,10 @@ void stereo_separate()
 	stereo_separate_state.carrier_i = carr_i;
 	stereo_separate_state.carrier_q = carr_q;
 
+	di = (stereo_separate_state.sdi * 19 + di) / 20;
+	dq = (stereo_separate_state.sdq * 19 + dq) / 20;
+	stereo_separate_state.sdi = di;
+	stereo_separate_state.sdq = dq;
 	if (di > 0) {
 		corr = 1024 * dq / di;
 		//corr += stereo_separate_state.corr;
