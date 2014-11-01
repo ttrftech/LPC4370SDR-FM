@@ -9,11 +9,11 @@
 #include "lpc43xx_i2s.h"
 #include "fmreceiver.h"
 
-
 #define NCO_CYCLE 1024
 #define NCO_SAMPLES 1024
 #define NCO_COS_OFFSET (NCO_CYCLE/4)
 
+__RAMFUNC(RAM)
 void nco_set_frequency(float32_t freq)
 {
 	int16_t *costbl = NCO_SIN_TABLE;
@@ -251,8 +251,95 @@ void fm_demod()
 	fm_demod_state.carrier = n;
 }
 
+struct {
+	float32_t carrier_i;
+	float32_t carrier_q;
+	float32_t step_cos;
+	float32_t step_sin;
+	float32_t delta_cos[12];
+	float32_t delta_sin[12];
+	int16_t corr;
+} stereo_separate_state;
+
+void
+stereo_separate_init(float32_t pilotfreq)
+{
+	float32_t angle = 2*PI * pilotfreq / IF_RATE;
+	int i;
+	stereo_separate_state.carrier_i = 1;
+	stereo_separate_state.carrier_q = 0;
+	stereo_separate_state.step_cos = arm_cos_f32(angle);
+	stereo_separate_state.step_sin = arm_sin_f32(angle);
+	for (i = 0; i < 12; i++) {
+		angle /= 2.0f;
+		stereo_separate_state.delta_cos[i] = arm_cos_f32(angle);
+		stereo_separate_state.delta_sin[i] = arm_sin_f32(angle);
+	}
+}
+
+__RAMFUNC(RAM)
+void stereo_separate()
+{
+	int16_t *src = (int16_t *)RESAMPLE_BUFFER;
+	int16_t *dest = (int16_t *)RESAMPLE2_BUFFER;
+	int32_t length = RESAMPLE_BUFFER_SIZE / sizeof(int16_t);
+	int i;
+	float32_t carr_i = stereo_separate_state.carrier_i;
+	float32_t carr_q = stereo_separate_state.carrier_q;
+	float32_t step_cos = stereo_separate_state.step_cos;
+	float32_t step_sin = stereo_separate_state.step_sin;
+	int32_t di = 0;
+	int32_t dq = 0;
+	int32_t corr = 0;
+
+	for (i = 0; i < length; i++) {
+		int16_t x1 = src[i];
+		dest[i] = x1 * (carr_i * carr_q);
+		di += carr_i * x1;
+		dq += carr_q * x1;
+		float32_t new_i = carr_i * step_cos - carr_q * step_sin;
+		float32_t new_q = carr_i * step_sin + carr_q * step_cos;
+		carr_i = new_i;
+		carr_q = new_q;
+	}
+	if (di > 0) {
+		corr = 1000 * dq / di;
+		if (corr > 4000)
+			corr = 4000;
+		else if (corr < -4000)
+			corr = 4000;
+	} else {
+		if (dq > 0)
+			corr = 4000;
+		else if (dq < 0)
+			corr = -4000;
+	}
+	if (corr != 0) {
+		int k;
+		int kc = 4000;
+		int c = corr;
+		if (c < 0)
+			c = -c;
+		for (k = 0; c < kc; k++)
+			kc >>= 1;
+		float32_t delta_cos = stereo_separate_state.delta_cos[k];
+		float32_t delta_sin = stereo_separate_state.delta_sin[k];
+		if (corr > 0)
+			delta_sin = -delta_sin;
+		float32_t new_i = carr_i * delta_cos - carr_q * delta_sin;
+		float32_t new_q = carr_i * delta_sin + carr_q * delta_cos;
+		carr_i = new_i;
+		carr_q = new_q;
+	}
+
+	stereo_separate_state.corr = corr;
+	stereo_separate_state.carrier_i = carr_i;
+	stereo_separate_state.carrier_q = carr_q;
+}
+
 #define RESAMPLE_NUM_TAPS	128
 
+// two arrays of FIR coefficients
 q15_t resample_fir_coeff[2][RESAMPLE_NUM_TAPS] = {
 {	  1,   -2,   -5,   -7,   -6,   -3,    1,    7,   11,   11,    7,
 	  0,  -10,  -17,  -19,  -14,   -1,   13,   27,   32,   25,    7,
@@ -404,6 +491,8 @@ void DMA_IRQHandler (void)
 	TESTPOINT_SPIKE();
 	fm_demod();
 	TESTPOINT_SPIKE();
+	stereo_separate();
+	TESTPOINT_SPIKE();
 	resample_fir_filter();
 
 	//audio_adjust_buffer();
@@ -458,4 +547,5 @@ dsp_init()
 	cic_q.nco_base = NCO_COS_TABLE;
 	//set_deemphasis(75);
 	set_deemphasis(50);
+	stereo_separate_init(19e3f);
 }

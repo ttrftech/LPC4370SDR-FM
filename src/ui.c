@@ -157,6 +157,10 @@ int btn_check()
 	return status;
 }
 
+#define CHANNEL_MAX	9
+#define TP_MAX		10
+#define FREQ_STEP	100000
+
 static struct {
 	enum { GAIN, CHANNEL, FREQ, TESTP, MODE_MAX } mode;
 	int gain;
@@ -165,9 +169,16 @@ static struct {
 	int tp;
 } uistat;
 
-#define CHANNEL_MAX	9
-#define TP_MAX		10
-#define FREQ_STEP	100000
+static float32_t channel_freqs[CHANNEL_MAX] = {
+		80.4e6f,
+		82.5e6f,
+		85.2e6f,
+		80.0e6f,
+		80.0e6f,
+		80.0e6f,
+		80.0e6f,
+		80.0e6f,
+};
 
 extern volatile struct {
 	uint16_t write_current;
@@ -181,6 +192,16 @@ extern struct {
 	uint32_t last;
 	int32_t carrier;
 } fm_demod_state;
+
+extern struct {
+	float32_t carrier_i;
+	float32_t carrier_q;
+	float32_t step_cos;
+	float32_t step_sin;
+	float32_t delta_cos[12];
+	float32_t delta_sin[12];
+	int16_t corr;
+} stereo_separate_state;
 
 
 void
@@ -226,6 +247,9 @@ ui_update()
 		}
 		case 7:
 			sprintf(buf, "CAR:%d", fm_demod_state.carrier);
+			break;
+		case 8:
+			sprintf(buf, "ST:%d", stereo_separate_state.corr);
 			break;
 		default:
 			sprintf(buf, "undef");
@@ -298,10 +322,16 @@ ui_process()
 				uistat.freq -= FREQ_STEP;
 			nco_set_frequency(uistat.freq);
 		} else if (uistat.mode == CHANNEL) {
-			if ((status & ENCODER_UP) && uistat.channel < CHANNEL_MAX)
+			if ((status & ENCODER_UP) && uistat.channel < CHANNEL_MAX) {
 				uistat.channel++;
-			if ((status & ENCODER_DOWN) && uistat.channel > 0)
+				uistat.freq = channel_freqs[uistat.channel];
+				nco_set_frequency(uistat.freq);
+			}
+			if ((status & ENCODER_DOWN) && uistat.channel > 0) {
 				uistat.channel--;
+				uistat.freq = channel_freqs[uistat.channel];
+				nco_set_frequency(uistat.freq);
+			}
 		} else if (uistat.mode == TESTP) {
 			if ((status & ENCODER_UP) && uistat.tp < TP_MAX)
 				uistat.tp++;
