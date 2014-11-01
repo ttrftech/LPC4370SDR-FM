@@ -13,6 +13,9 @@
 #define NCO_SAMPLES 1024
 #define NCO_COS_OFFSET (NCO_CYCLE/4)
 
+//float32_t arm_cos_f32(float32_t radian) __RAMFUNC(RAM);
+//float32_t arm_sin_f32(float32_t radian) __RAMFUNC(RAM);
+
 __RAMFUNC(RAM)
 void nco_set_frequency(float32_t freq)
 {
@@ -256,6 +259,8 @@ struct {
 	float32_t carrier_q;
 	float32_t step_cos;
 	float32_t step_sin;
+	float32_t basestep_cos;
+	float32_t basestep_sin;
 	float32_t delta_cos[12];
 	float32_t delta_sin[12];
 	int16_t corr;
@@ -268,12 +273,16 @@ stereo_separate_init(float32_t pilotfreq)
 	int i;
 	stereo_separate_state.carrier_i = 1;
 	stereo_separate_state.carrier_q = 0;
-	stereo_separate_state.step_cos = arm_cos_f32(angle);
-	stereo_separate_state.step_sin = arm_sin_f32(angle);
+	stereo_separate_state.basestep_cos = arm_cos_f32(angle);
+	stereo_separate_state.basestep_sin = arm_sin_f32(angle);
+	stereo_separate_state.step_cos = stereo_separate_state.basestep_cos;
+	stereo_separate_state.step_sin = stereo_separate_state.basestep_sin;
+	stereo_separate_state.corr = 0;
+	angle /= 512.0f;
 	for (i = 0; i < 12; i++) {
-		angle /= 2.0f;
 		stereo_separate_state.delta_cos[i] = arm_cos_f32(angle);
 		stereo_separate_state.delta_sin[i] = arm_sin_f32(angle);
+		angle /= 2.0f;
 	}
 }
 
@@ -302,39 +311,46 @@ void stereo_separate()
 		carr_i = new_i;
 		carr_q = new_q;
 	}
+	stereo_separate_state.carrier_i = carr_i;
+	stereo_separate_state.carrier_q = carr_q;
+
 	if (di > 0) {
-		corr = 1000 * dq / di;
-		if (corr > 4000)
-			corr = 4000;
-		else if (corr < -4000)
-			corr = 4000;
+		corr = 1024 * dq / di;
+		//corr += stereo_separate_state.corr;
+		if (corr > 4095)
+			corr = 4095;
+		else if (corr < -4095)
+			corr = -4095;
 	} else {
 		if (dq > 0)
-			corr = 4000;
+			corr = 4095;
 		else if (dq < 0)
-			corr = -4000;
+			corr = -4095;
 	}
 	if (corr != 0) {
+		float32_t step_cos = stereo_separate_state.basestep_cos;
+		float32_t step_sin = stereo_separate_state.basestep_sin;
 		int k;
-		int kc = 4000;
+		int kc = 2048;
 		int c = corr;
 		if (c < 0)
 			c = -c;
-		for (k = 0; c < kc; k++)
-			kc >>= 1;
-		float32_t delta_cos = stereo_separate_state.delta_cos[k];
-		float32_t delta_sin = stereo_separate_state.delta_sin[k];
-		if (corr > 0)
-			delta_sin = -delta_sin;
-		float32_t new_i = carr_i * delta_cos - carr_q * delta_sin;
-		float32_t new_q = carr_i * delta_sin + carr_q * delta_cos;
-		carr_i = new_i;
-		carr_q = new_q;
+		for (k = 0; kc > 0; k++, kc >>= 1) {
+			if (c >= kc) {
+				float32_t dc = stereo_separate_state.delta_cos[k];
+				float32_t ds = stereo_separate_state.delta_sin[k];
+				if (corr > 0)
+					ds = -ds;
+				float32_t sc = step_cos * dc - step_sin * ds;
+				step_sin = step_cos * ds + step_sin * dc;
+				step_cos = sc;
+				c -= kc;
+			}
+		}
+		stereo_separate_state.step_cos = step_cos;
+		stereo_separate_state.step_sin = step_sin;
+		stereo_separate_state.corr = corr;
 	}
-
-	stereo_separate_state.corr = corr;
-	stereo_separate_state.carrier_i = carr_i;
-	stereo_separate_state.carrier_q = carr_q;
 }
 
 #define RESAMPLE_NUM_TAPS	128

@@ -174,10 +174,10 @@ static float32_t channel_freqs[CHANNEL_MAX] = {
 		82.5e6f,
 		85.2e6f,
 		80.0e6f,
-		80.0e6f,
-		80.0e6f,
-		80.0e6f,
-		80.0e6f,
+		567e3f,
+		747e3f,
+		1287e3f,
+		1440e3f,
 };
 
 extern volatile struct {
@@ -198,6 +198,8 @@ extern struct {
 	float32_t carrier_q;
 	float32_t step_cos;
 	float32_t step_sin;
+	float32_t basestep_cos;
+	float32_t basestep_sin;
 	float32_t delta_cos[12];
 	float32_t delta_sin[12];
 	int16_t corr;
