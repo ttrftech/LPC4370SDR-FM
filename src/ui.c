@@ -158,7 +158,7 @@ int btn_check()
 }
 
 #define CHANNEL_MAX	9
-#define TP_MAX		10
+#define TP_MAX		16
 #define FREQ_STEP	100000
 
 static struct {
@@ -174,10 +174,10 @@ static float32_t channel_freqs[CHANNEL_MAX] = {
 		82.5e6f,
 		85.2e6f,
 		80.0e6f,
-		567e3f,
-		747e3f,
-		1287e3f,
-		1440e3f,
+		81.3e6f,
+		76.1e6f,
+		77.1e6f,
+		145e6f,
 };
 
 extern volatile struct {
@@ -193,7 +193,7 @@ extern struct {
 	int32_t carrier;
 } fm_demod_state;
 
-extern struct {
+struct {
 	float32_t carrier_i;
 	float32_t carrier_q;
 	float32_t step_cos;
@@ -203,7 +203,10 @@ extern struct {
 	float32_t delta_cos[12];
 	float32_t delta_sin[12];
 	int16_t corr;
+	int32_t sdi;
+	int32_t sdq;
 } stereo_separate_state;
+
 
 
 void
@@ -252,6 +255,18 @@ ui_update()
 			break;
 		case 8:
 			sprintf(buf, "ST:%d", stereo_separate_state.corr);
+			break;
+		case 9:
+			sprintf(buf, "DQ:%d", stereo_separate_state.sdq);
+			break;
+		case 10:
+			sprintf(buf, "DI:%d", stereo_separate_state.sdi);
+			break;
+		case 11:
+			sprintf(buf, "NA:%f", stereo_separate_state.carrier_i*stereo_separate_state.carrier_i+stereo_separate_state.carrier_q*stereo_separate_state.carrier_q);
+			break;
+		case 12:
+			sprintf(buf, "SA:%f", stereo_separate_state.step_cos*stereo_separate_state.step_cos+stereo_separate_state.step_sin*stereo_separate_state.step_sin);
 			break;
 		default:
 			sprintf(buf, "undef");
@@ -335,10 +350,11 @@ ui_process()
 				nco_set_frequency(uistat.freq);
 			}
 		} else if (uistat.mode == TESTP) {
-			if ((status & ENCODER_UP) && uistat.tp < TP_MAX)
+			if (status & ENCODER_UP)
 				uistat.tp++;
-			if ((status & ENCODER_DOWN) && uistat.tp > 0)
+			if (status & ENCODER_DOWN)
 				uistat.tp--;
+			uistat.tp &= TP_MAX-1; // assume 2^n
 		}
 		ui_update();
 

@@ -182,6 +182,7 @@ void setup_i2s_clock(LPC_I2Sn_Type *I2Sx, uint32_t Freq, uint8_t TRMode)
 	CGU_EntityConnect(CGU_CLKSRC_PLL0_AUDIO, CGU_BASE_APB1);
 	i2sPclk = CGU_GetPCLKFrequency(CGU_PERIPHERAL_I2S);
 	wordwidth = 16;
+	//wordwidth = 16 * 2;
 	bitrate = 2 * wordwidth - 1;
 
 	/* Calculate X and Y divider

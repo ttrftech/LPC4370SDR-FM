@@ -36,10 +36,19 @@ void nco_set_frequency(float32_t freq)
 #define FIR_NUM_TAPS			32
 
 q15_t fir_coeff[FIR_NUM_TAPS] = {
+#if 1
+			// original coeff
 			-204,   -42,   328,   144,  -687,  -430,  1301,  1060, -2162,
 		   -2298,  3208,  4691, -4150, -9707,  3106, 22273, 22273,  3106,
 		   -9707, -4150,  4691,  3208, -2298, -2162,  1060,  1301,  -430,
 			-687,   144,   328,   -42,  -204
+#else
+			// bw*1.5
+			 -414,    384,    -26,   -730,   1457,  -1183,   -755,   3523,
+			-4611,   1579,   5072, -10479,   7881,   5033, -19714,  16931,
+			16931, -19714,   5033,   7881, -10479,   5072,   1579,  -4611,
+			 3523,   -755,  -1183,   1457,   -730,    -26,    384,   -414
+#endif
 };
 
 typedef struct {
@@ -282,7 +291,7 @@ stereo_separate_init(float32_t pilotfreq)
 	stereo_separate_state.corr = 0;
 	stereo_separate_state.sdi = 0;
 	stereo_separate_state.sdq = 0;
-	angle /= 512.0f;
+	angle /= 1024.0f;
 	for (i = 0; i < 12; i++) {
 		stereo_separate_state.delta_cos[i] = arm_cos_f32(angle);
 		stereo_separate_state.delta_sin[i] = arm_sin_f32(angle);
@@ -299,14 +308,15 @@ void stereo_separate()
 	int i;
 	float32_t carr_i = stereo_separate_state.carrier_i;
 	float32_t carr_q = stereo_separate_state.carrier_q;
+	float32_t ampl;
 	float32_t step_cos = stereo_separate_state.step_cos;
 	float32_t step_sin = stereo_separate_state.step_sin;
-	int32_t di = 0;
-	int32_t dq = 0;
+	float32_t di = 0;
+	float32_t dq = 0;
 	int32_t corr = 0;
 
 	for (i = 0; i < length; i++) {
-		int16_t x1 = src[i];
+		float32_t x1 = src[i];
 		dest[i] = x1 * (2 * carr_i * carr_q);
 		di += carr_i * x1;
 		dq += carr_q * x1;
@@ -315,8 +325,10 @@ void stereo_separate()
 		carr_i = new_i;
 		carr_q = new_q;
 	}
-	stereo_separate_state.carrier_i = carr_i;
-	stereo_separate_state.carrier_q = carr_q;
+	arm_sqrt_f32(carr_i * carr_i + carr_q * carr_q, &ampl);
+
+	stereo_separate_state.carrier_i = carr_i / ampl;
+	stereo_separate_state.carrier_q = carr_q / ampl;
 
 	di = (stereo_separate_state.sdi * 19 + di) / 20;
 	dq = (stereo_separate_state.sdq * 19 + dq) / 20;
@@ -365,6 +377,7 @@ void stereo_separate()
 
 // two arrays of FIR coefficients
 q15_t resample_fir_coeff[2][RESAMPLE_NUM_TAPS] = {
+#if 0
 {	  1,   -2,   -5,   -7,   -6,   -3,    1,    7,   11,   11,    7,
 	  0,  -10,  -17,  -19,  -14,   -1,   13,   27,   32,   25,    7,
 	-16,  -39,  -50,  -44,  -19,   17,   53,   74,   70,   38,  -14,
@@ -389,6 +402,32 @@ q15_t resample_fir_coeff[2][RESAMPLE_NUM_TAPS] = {
 	 36,   -1,  -33,  -49,  -46,  -28,   -4,   18,   30,   31,   21,
 	  5,   -8,  -17,  -19,  -14,   -5,    3,    9,   11,    9,    4,
 	 -1,   -5,   -7,   -6,   -3,    0,    3}
+#else
+{   	   0,   -1,   -3,   -5,   -7,   -8,   -9,   -9,   -8,   -6,   -3,
+           0,    5,   10,   16,   21,   24,   26,   25,   21,   14,    3,
+          -8,  -22,  -36,  -49,  -58,  -63,  -63,  -55,  -40,  -19,    7,
+          37,   68,   96,  120,  134,  137,  126,  101,   61,    9,  -51,
+        -117, -181, -238, -280, -300, -294, -256, -184,  -77,   61,  229,
+         419,  622,  829, 1028, 1209, 1362, 1478, 1551, 1576, 1551, 1478,
+        1362, 1209, 1028,  829,  622,  419,  229,   61,  -77, -184, -256,
+        -294, -300, -280, -238, -181, -117,  -51,    9,   61,  101,  126,
+         137,  134,  120,   96,   68,   37,    7,  -19,  -40,  -55,  -63,
+         -63,  -58,  -49,  -36,  -22,   -8,    3,   14,   21,   25,   26,
+          24,   21,   16,   10,    5,    0,   -3,   -6,   -8,   -9,   -9,
+          -8,   -7,   -5,   -3,   -1,    0,    0},
+{		   1,    0,   -2,   -4,   -6,   -7,   -9,   -9,   -9,   -7,   -5,
+          -1,    2,    8,   13,   19,   23,   26,   26,   23,   18,    9,
+          -2,  -15,  -29,  -43,  -54,  -61,  -64,  -60,  -48,  -30,   -6,
+          21,   52,   82,  109,  128,  137,  133,  115,   83,   37,  -20,
+         -84, -149, -211, -261, -293, -301, -279, -224, -135,  -11,  142,
+         322,  520,  726,  930, 1122, 1290, 1425, 1521, 1569, 1569, 1521,
+        1425, 1290, 1122,  930,  726,  520,  322,  142,  -11, -135, -224,
+        -279, -301, -293, -261, -211, -149,  -84,  -20,   37,   83,  115,
+         133,  137,  128,  109,   82,   52,   21,   -6,  -30,  -48,  -60,
+         -64,  -61,  -54,  -43,  -29,  -15,   -2,    9,   18,   23,   26,
+          26,   23,   19,   13,    8,    2,   -1,   -5,   -7,   -9,   -9,
+          -9,   -7,   -6,   -4,   -2,    0,    1}
+#endif
 };
 
 struct {
@@ -396,12 +435,14 @@ struct {
 	float deemphasis_mult;
 	float deemphasis_rest;
 	float deemphasis_value;
+	float deemphasis_value2;
 } resample_state;
 
 void
 set_deemphasis(int timeconst_us)
 {
 	resample_state.deemphasis_value = 0;
+	resample_state.deemphasis_value2 = 0;
 	resample_state.deemphasis_mult = exp(-1e6/(timeconst_us * AUDIO_RATE));
 	resample_state.deemphasis_rest = 1 - resample_state.deemphasis_mult;
 }
@@ -442,7 +483,7 @@ void resample_fir_filter()
 		//dest[cur++] = __PKHBT(__SSAT((acc0 >> 15), 16), __SSAT((acc1 >> 15), 16), 16);
 		cur %= AUDIO_BUFFER_SIZE / 2;
 		audio_state.write_total++;
-		idx += 13;
+		idx += 13; /* 2/13 decimation: 2 samples per loop */
 	}
 
 	resample_state.deemphasis_value = value;
@@ -453,6 +494,85 @@ void resample_fir_filter()
 	for (i = 0; i < RESAMPLE_STATE_SIZE / sizeof(uint32_t); i++) {
 		//*state++ = *src++;
 	    __asm__ volatile ("ldr r0, [%0], #+4\n" : : "r" (src) : "r0");
+	    __asm__ volatile ("str r0, [%0], #+4\n" : : "r" (state) : "r0");
+	}
+}
+
+__RAMFUNC(RAM)
+void stereo_matrix()
+{
+	uint32_t *s1 = (uint32_t *)RESAMPLE_BUFFER;
+	uint32_t *s2 = (uint32_t *)RESAMPLE2_BUFFER;
+	int i;
+	for (i = 0; i < RESAMPLE_BUFFER_SIZE/4; i++) {
+		uint32_t x1 = *s1;
+		uint32_t x2 = *s2;
+		uint32_t l = __SADD16(x1, x2);
+		uint32_t r = __SSUB16(x1, x2);
+		*s1++ = l;
+		*s2++ = r;
+	}
+}
+
+__RAMFUNC(RAM)
+void resample_fir_filter_stereo()
+{
+	const uint32_t *coeff;
+	const uint16_t *src1 = (const uint16_t *)RESAMPLE_STATE;
+	const uint16_t *src2 = (const uint16_t *)RESAMPLE2_STATE;
+	const uint32_t *s1, *s2;
+	int32_t tail = RESAMPLE_BUFFER_SIZE;
+	int32_t idx = resample_state.index;
+	int32_t acc1, acc2;
+	int i, j;
+	int cur = audio_state.write_current;
+	uint16_t *dest = (uint16_t *)AUDIO_BUFFER;
+	float val1 = resample_state.deemphasis_value;
+	float val2 = resample_state.deemphasis_value2;
+
+	while (idx < tail) {
+		coeff = (uint32_t*)resample_fir_coeff[idx % 2];
+		acc1 = 0;
+		acc2 = 0;
+		s1 = (const uint32_t*)&src1[idx >> 1];
+		s2 = (const uint32_t*)&src2[idx >> 1];
+		for (j = 0; j < RESAMPLE_NUM_TAPS / 2; j++) {
+			uint32_t x1 = *s1++;
+			uint32_t x2 = *s2++;
+			//uint32_t l = __SADD16(x1, x2);
+			//uint32_t r = __SSUB16(x1, x2);
+			acc1 = __SMLAD(x1, *coeff, acc1);
+			acc2 = __SMLAD(x2, *coeff, acc2);
+			coeff++;
+		}
+
+		// deemphasis with time constant
+		val1 = (float)acc1 * resample_state.deemphasis_rest + val1 * resample_state.deemphasis_mult;
+		val2 = (float)acc2 * resample_state.deemphasis_rest + val2 * resample_state.deemphasis_mult;
+		dest[cur++] = __SSAT((int32_t)val1 >> (16 - RESAMPLE_GAINBITS), 16);
+		dest[cur++] = __SSAT((int32_t)val2 >> (16 - RESAMPLE_GAINBITS), 16);
+		//dest[cur++] = 0;
+		cur %= AUDIO_BUFFER_SIZE / 2;
+		audio_state.write_total += 2;
+		idx += 13; /* 2/13 decimation: 2 samples per loop */
+	}
+
+	resample_state.deemphasis_value = val1;
+	resample_state.deemphasis_value2 = val2;
+	audio_state.write_current = cur;
+	resample_state.index = idx - tail;
+	uint32_t *state = (uint32_t *)RESAMPLE_STATE;
+	src1 = &src1[tail / sizeof(*src1)];
+	for (i = 0; i < RESAMPLE_STATE_SIZE / sizeof(uint32_t); i++) {
+		//*state++ = *src1++;
+	    __asm__ volatile ("ldr r0, [%0], #+4\n" : : "r" (src1) : "r0");
+	    __asm__ volatile ("str r0, [%0], #+4\n" : : "r" (state) : "r0");
+	}
+	state = (uint32_t *)RESAMPLE2_STATE;
+	src2 = &src2[tail / sizeof(*src2)];
+	for (i = 0; i < RESAMPLE_STATE_SIZE / sizeof(uint32_t); i++) {
+		//*state++ = *src2++;
+	    __asm__ volatile ("ldr r0, [%0], #+4\n" : : "r" (src2) : "r0");
 	    __asm__ volatile ("str r0, [%0], #+4\n" : : "r" (state) : "r0");
 	}
 }
@@ -517,7 +637,10 @@ void DMA_IRQHandler (void)
 	TESTPOINT_SPIKE();
 	stereo_separate();
 	TESTPOINT_SPIKE();
-	resample_fir_filter();
+	//resample_fir_filter();
+	stereo_matrix();
+	TESTPOINT_SPIKE();
+	resample_fir_filter_stereo();
 
 	//audio_adjust_buffer();
 	TESTPOINT_OFF();

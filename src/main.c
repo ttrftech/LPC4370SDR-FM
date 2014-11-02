@@ -30,11 +30,6 @@
 #include "vadc.h"
 
 
-#define FIFO_SIZE       8
-
-#define DMA_NUM_LLI_TO_USE    16
-static GPDMA_LLI_Type DMA_Stuff[DMA_NUM_LLI_TO_USE];
-
 #if 1
 // PLL0AUDIO: 39.936MHz = (12MHz / 25) * (416 * 2) / (5 * 2)
 #define PLL0_MSEL	416
@@ -51,6 +46,12 @@ static GPDMA_LLI_Type DMA_Stuff[DMA_NUM_LLI_TO_USE];
 //#define ADCCLK_MATCHVALUE	(8 - 1)  // 40MHz / 8 = 5MHz
 //#define ADCCLK_MATCHVALUE	(16 - 1)  // 40MHz / 16 = 2.5MHz
 #define ADCCLK_DGECI 0
+
+
+#define FIFO_SIZE       8
+
+#define DMA_LLI_NUM    16
+static GPDMA_LLI_Type DMA_LTable[DMA_LLI_NUM];
 
 volatile int32_t capture_count;
 
@@ -81,17 +82,17 @@ void VADC_SetupDMA(void)
   // The size of the transfer is in multiples of 32bit copies (hence the /4)
   // and must be even multiples of FIFO_SIZE.
   buffer = CAPTUREBUFFER0;
-  blocksize = CAPTUREBUFFER_SIZE / DMA_NUM_LLI_TO_USE;
+  blocksize = CAPTUREBUFFER_SIZE / DMA_LLI_NUM;
   transfersize = blocksize / 4;
 
-  for (i = 0; i < DMA_NUM_LLI_TO_USE; i++)
+  for (i = 0; i < DMA_LLI_NUM; i++)
   {
-	if (i == DMA_NUM_LLI_TO_USE / 2)
+	if (i == DMA_LLI_NUM / 2)
 		buffer = CAPTUREBUFFER1;
-    DMA_Stuff[i].SrcAddr = VADC_DMA_READ_SRC;
-    DMA_Stuff[i].DstAddr = (uint32_t)buffer;
-    DMA_Stuff[i].NextLLI = (uint32_t)(&DMA_Stuff[(i+1)%DMA_NUM_LLI_TO_USE]);
-    DMA_Stuff[i].Control = (transfersize << 0) |      // Transfersize (does not matter when flow control is handled by peripheral)
+	DMA_LTable[i].SrcAddr = VADC_DMA_READ_SRC;
+	DMA_LTable[i].DstAddr = (uint32_t)buffer;
+	DMA_LTable[i].NextLLI = (uint32_t)(&DMA_LTable[(i+1) % DMA_LLI_NUM]);
+	DMA_LTable[i].Control = (transfersize << 0) |      // Transfersize (does not matter when flow control is handled by peripheral)
                            (0x2 << 12)  |          // Source Burst Size
                            (0x2 << 15)  |          // Destination Burst Size
                            //(0x0 << 15)  |          // Destination Burst Size
@@ -107,13 +108,13 @@ void VADC_SetupDMA(void)
 
   // Let the last LLI in the chain cause a terminal count interrupt to
   // notify when the capture buffer is completely filled
-  DMA_Stuff[DMA_NUM_LLI_TO_USE/2 - 1].Control |= (0x1UL << 31); // Terminal count interrupt enabled
-  DMA_Stuff[DMA_NUM_LLI_TO_USE - 1].Control |= (0x1UL << 31); // Terminal count interrupt enabled
+  DMA_LTable[DMA_LLI_NUM/2 - 1].Control |= (0x1UL << 31); // Terminal count interrupt enabled
+  DMA_LTable[DMA_LLI_NUM - 1].Control |= (0x1UL << 31); // Terminal count interrupt enabled
 
-  LPC_GPDMA->C0SRCADDR = DMA_Stuff[0].SrcAddr;
-  LPC_GPDMA->C0DESTADDR = DMA_Stuff[0].DstAddr;
-  LPC_GPDMA->C0CONTROL = DMA_Stuff[0].Control;
-  LPC_GPDMA->C0LLI     = (uint32_t)(&DMA_Stuff[1]); // must be pointing to the second LLI as the first is used when initializing
+  LPC_GPDMA->C0SRCADDR = DMA_LTable[0].SrcAddr;
+  LPC_GPDMA->C0DESTADDR = DMA_LTable[0].DstAddr;
+  LPC_GPDMA->C0CONTROL = DMA_LTable[0].Control;
+  LPC_GPDMA->C0LLI     = (uint32_t)(&DMA_LTable[1]); // must be pointing to the second LLI as the first is used when initializing
   LPC_GPDMA->C0CONFIG  =  (0x1)        |          // Enable bit
                           (VADC_DMA_READ << 1) |  // SRCPERIPHERAL - set to 8 - VADC
                           (0x0 << 6)   |          // Destination peripheral - memory - no setting
@@ -315,7 +316,9 @@ static void i2s_init(uint32_t rate)
 
     // Configure I2S
     i2sCfg.wordwidth = I2S_WORDWIDTH_16;
-    i2sCfg.mono      = I2S_MONO;
+    //i2sCfg.mono      = I2S_MONO;
+    //i2sCfg.wordwidth = I2S_WORDWIDTH_32;
+    i2sCfg.mono      = I2S_STEREO;
     i2sCfg.stop      = I2S_STOP_ENABLE;
     i2sCfg.reset     = I2S_RESET_ENABLE;
     i2sCfg.ws_sel    = I2S_MASTER_MODE;
@@ -340,25 +343,15 @@ static void i2s_init(uint32_t rate)
     NVIC_EnableIRQ(I2S0_IRQn);
 }
 
-static void interrupt_priority()
-{
-  // High - Copying of samples
-  NVIC_SetPriority(DMA_IRQn,   ((0x01<<3)|0x01));
-  NVIC_SetPriority(I2S0_IRQn,  ((0x02<<3)|0x01));
-
-  // Low - Communication
-  NVIC_SetPriority(USB0_IRQn, ((0x03<<3)|0x01));
-  NVIC_SetPriority(USB1_IRQn, ((0x03<<3)|0x01));
-  NVIC_SetPriority(I2C0_IRQn, ((0x03<<3)|0x01));
-}
-
 int main(void) {
     setup_systemclock();
     setup_pll0audio(PLL0_MSEL, PLL0_NSEL, PLL0_PSEL);
     // Setup SysTick Timer to interrupt at 1 msec intervals
 	SysTick_Config(CGU_GetPCLKFrequency(CGU_PERIPHERAL_M4CORE) / 1000);
 
-    interrupt_priority();
+    // interrupt priority: the highest for DMA, i2s
+    NVIC_SetPriority(DMA_IRQn,   ((0x01<<3)|0x01));
+    NVIC_SetPriority(I2S0_IRQn,  ((0x02<<3)|0x01));
 
 	TESTPOINT_INIT();
     LED_INIT();
@@ -385,50 +378,6 @@ int main(void) {
 
     	//printf("%08x %08x\n", LPC_VADC->FIFO_OUTPUT[0], LPC_VADC->FIFO_OUTPUT[1]);
     	//emc_WaitUS(500000);
-
-#if 0
-        if ((capture_count % 2048) == 2047) {
-        	//int i;
-        	//LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
-            //printf("write:%d read:%d\n", audio_state.write_total, audio_state.read_total);
-            //printf("diff:%d\n", audio_state.write_total - audio_state.read_total);
-            //printf("rebuf:%d\n", audio_state.rebuffer_count);
-//        	GPIO_SetValue(0,1<<8);
-
-        	//int length = CAPTUREBUFFER_SIZE / 2;
-        	//memset(DEST_BUFFER, 0, DEST_BUFFER_SIZE);
-            //cic_decimate(&cic1, CAPTUREBUFFER, length);
-
-        	//GPIO_SetValue(0,1<<8);
-        	//SET_MEAS_PIN_3();
-        	//fir_filter_iq();
-        	//fm_demod();
-//        	resample_fir_filter2();
-        	//CLR_MEAS_PIN_3();
-        	//break;
-            //printf("carrier:%d\n", fm_demod_state.carrier);
-        }
-#endif
-#if 0
-        {
-        	uint32_t txLevel = I2S_GetLevel(LPC_I2S0, I2S_TX_MODE);
-        	int rest = audio_state.write_total - audio_state.read_total;
-        	if (txLevel <= 4) {
-        		// Fill the remaining FIFO
-        		int cur = audio_state.read_current;
-        		int16_t *buffer = (int16_t*)AUDIO_BUFFER2;
-        		//int16_t *buffer = (int16_t*)AUDIO_BUFFER;
-        		int i;
-        		for (i = 0; i < (8 - txLevel); i++) {
-        			LPC_I2S0->TXFIFO = *(uint32_t *)&buffer[cur];
-        			cur += 2;
-        			cur %= AUDIO_BUFFER_SIZE / 2;
-        			audio_state.read_total += 2;
-        		}
-        		audio_state.read_current = cur;
-            }
-        }
-#endif
     }
 	VADC_Stop();
     return 0 ;
