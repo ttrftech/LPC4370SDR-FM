@@ -91,16 +91,13 @@ void cic_decimate(CICState *cic, uint8_t *buf, int len)
 		for (j = 0; j < NCO_SAMPLES/2; ) {
 #if 1 /* unroll manually */
 #define CIC0()	do { \
+			uint32_t f = nco_base[j++]; \
 			uint32_t x = capture[i++]; \
-			uint32_t f = *nco++; \
 			x = __SSUB16(x, offset); \
 			s0 = __SMLAD(x, f, s0); \
 			s1 += s0; \
 			s2 += s1; \
-			j++; \
 		} while(0)
-			CIC0();CIC0();CIC0();CIC0();
-			CIC0();CIC0();CIC0();CIC0();
 			CIC0();CIC0();CIC0();CIC0();
 			CIC0();CIC0();CIC0();CIC0();
 #else
@@ -144,10 +141,10 @@ void fir_filter_iq()
 	uint32_t *dest = (uint32_t *)DEMOD_BUFFER;
 	int i;
 
-	for (i = 0; i < length; i++) {
+	for (i = 0; i < length / 2; i++) {
 		q31_t acc0_i = 0;
-		q31_t acc1_i = 0;
 		q31_t acc0_q = 0;
+		q31_t acc1_i = 0;
 		q31_t acc1_q = 0;
 		uint32_t x0 = in_i[0];
 		uint32_t y0 = in_q[0];
@@ -159,10 +156,11 @@ void fir_filter_iq()
 		uint32_t y2 = in_q[j+1]; \
 		acc0_i = __SMLAD(x0, c0, acc0_i); \
 		acc0_q = __SMLAD(y0, c0, acc0_q); \
-		acc1_i = __SMLADX(__PKHBT(x2, x0, 0), c0, acc1_i); \
-		acc1_q = __SMLADX(__PKHBT(y2, y0, 0), c0, acc1_q); \
+		acc1_i = __SMLAD(x2, c0, acc1_i); \
+		acc1_q = __SMLAD(y2, c0, acc1_q); \
 		x0 = x2; \
-		y0 = y2; } while(0)
+		y0 = y2; \
+	} while(0)
 
 		STEP(0); STEP(1); STEP(2); STEP(3);
 		STEP(4); STEP(5); STEP(6); STEP(7);
@@ -184,21 +182,21 @@ void fir_filter_iq()
 #endif
 		dest[i*2] = __PKHBT(__SSAT((acc0_i >> 15), 16), __SSAT((acc0_q >> 15), 16), 16);
 		dest[i*2+1] = __PKHBT(__SSAT((acc1_i >> 15), 16), __SSAT((acc1_q >> 15), 16), 16);
-		in_i++;
-		in_q++;
+		in_i += 2;
+		in_q += 2;
 	}
 
 	uint32_t *state_i = (uint32_t *)I_FIR_STATE;
 	for (i = 0; i < FIR_STATE_SIZE; i += 4) {
-		//*state_i++ = *in_i++;
-	    __asm__ volatile ("ldr r0, [%0, %2]\n"
-	    				  "str r0, [%1, %2]\n" :: "l"(in_i), "l"(state_i), "X"(i): "r0");
+		*state_i++ = *in_i++;
+	    //__asm__ volatile ("ldr r0, [%0, %2]\n"
+	    //				  "str r0, [%1, %2]\n" :: "l"(in_i), "l"(state_i), "X"(i): "r0");
 	}
 	uint32_t *state_q = (uint32_t *)Q_FIR_STATE;
 	for (i = 0; i < FIR_STATE_SIZE; i += 4) {
-		//*state_q++ = *in_q++;
-	    __asm__ volatile ("ldr r0, [%0, %2]\n"
-	    				  "str r0, [%1, %2]\n" :: "l"(in_q), "l"(state_q), "X"(i): "r0");
+		*state_q++ = *in_q++;
+	    //__asm__ volatile ("ldr r0, [%0, %2]\n"
+	    //				  "str r0, [%1, %2]\n" :: "l"(in_q), "l"(state_q), "X"(i): "r0");
 	}
 }
 
@@ -219,7 +217,7 @@ void fm_demod()
 	int32_t n = __SMUAD(x0, x0) >> DEMOD_GAINBITS;
 	for (i = 0; i < length; i++) {
 		uint32_t x1 = src[i];
-#if 0
+#if 1
 		// I*(I-I0)-Q*(Q-Q0)
 		int32_t d = __SMUSDX(__SSUB16(x1, x0), x1);
 		// I^2 + Q^2
@@ -227,11 +225,12 @@ void fm_demod()
 		int32_t y = d / n;
 		//dest[i] = y;
 		dest[i] = __SSAT(y, 16);
-		//dest[i] = __SSAT((y * ((1<<12) + (y>>2) * (y>>2) / 3)) >> 12, 16);
+		//dest[i] = __SSAT((y * ((1<<12) + (y>>2) * (y>>2) / 3)) >> 14, 16);
+		//dest[i] = __SSAT((y * (32768 - y * ((y*7838 + 6226)>>16))) >> 15, 16);
 #else
 #define AMPL_CONV (4*312e6f/(2*PI*150e3f))
-		int32_t re = __SMUAD(x1, x0);
-		int32_t im = __SMUSDX(x1, x0);
+		int32_t re = __SMUAD(x1, x0);	// I0*I1 + Q0*Q1
+		int32_t im = __SMUSDX(x1, x0);	// I0*Q1 - I1*Q0
 		uint8_t neg = FALSE;
 		float32_t d;
 		float32_t ang = 0;
@@ -637,10 +636,10 @@ void DMA_IRQHandler (void)
 	TESTPOINT_SPIKE();
 	stereo_separate();
 	TESTPOINT_SPIKE();
-	//resample_fir_filter();
 	stereo_matrix();
 	TESTPOINT_SPIKE();
 	resample_fir_filter_stereo();
+	//resample_fir_filter();
 
 	//audio_adjust_buffer();
 	TESTPOINT_OFF();

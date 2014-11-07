@@ -317,7 +317,6 @@ static void i2s_init(uint32_t rate)
     // Configure I2S
     i2sCfg.wordwidth = I2S_WORDWIDTH_16;
     //i2sCfg.mono      = I2S_MONO;
-    //i2sCfg.wordwidth = I2S_WORDWIDTH_32;
     i2sCfg.mono      = I2S_STEREO;
     i2sCfg.stop      = I2S_STOP_ENABLE;
     i2sCfg.reset     = I2S_RESET_ENABLE;

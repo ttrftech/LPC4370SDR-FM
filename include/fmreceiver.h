@@ -32,23 +32,23 @@
 
 #define I_FIR_STATE			((q15_t*)0x10080000)
 #define I_FIR_BUFFER		((q15_t*)0x10080040)
-#define Q_FIR_STATE			((q15_t*)0x10084040)
-#define Q_FIR_BUFFER		((q15_t*)0x10084080)
-/*  0x10000 / 2 / 32 */
-#define FIR_BUFFER_SIZE		0x400
+#define Q_FIR_STATE			((q15_t*)0x10081000)
+#define Q_FIR_BUFFER		((q15_t*)0x10081040)
+/*  0x10000 / 2 / 16 */
+#define FIR_BUFFER_SIZE		0x800
 #define FIR_STATE_SIZE		0x40
-#define FIR_GAINBITS		4	/* 0 ~ 6 */
+#define FIR_GAINBITS		6	/* 0 ~ 6 */
 
 #define DEMOD_BUFFER 		((q15_t*)0x10088000)
 #define DEMOD_BUFFER_SIZE	0x800
 //#define DEMOD_GAINBITS		6	/* 0 ~ 6 */
-#define DEMOD_GAINBITS		10	/* 0 ~ 6 */
+#define DEMOD_GAINBITS		9	/* 0 ~ 10 */
 
 #define RESAMPLE_STATE 		((q15_t*)0x10089000)
 #define RESAMPLE_STATE_SIZE	0x100
 #define RESAMPLE_BUFFER 	((q15_t*)0x10089100)
 #define RESAMPLE_BUFFER_SIZE 0x400
-#define RESAMPLE_GAINBITS	5	/* 0 ~ 6 */
+#define RESAMPLE_GAINBITS	6	/* 0 ~ 6 */
 
 #define RESAMPLE2_STATE 		((q15_t*)0x10089500)
 #define RESAMPLE2_STATE_SIZE	0x100
