@@ -292,8 +292,8 @@ static void i2s_init(uint32_t rate)
 	I2CWrite(0x18, 0x0d, 0x08); /* Route Right DAC to HPR */
 	I2CWrite(0x18, 0x03, 0x00); /* Set the DAC PTM mode to PTM_P3/4 */
 	I2CWrite(0x18, 0x04, 0x00);
-	I2CWrite(0x18, 0x10, 0x00); /* Set the HPL gain to 0dB */
-	I2CWrite(0x18, 0x11, 0x00); /* Set the HPR gain to 0dB */
+	I2CWrite(0x18, 0x10, 0x0a); /* Set the HPL gain to 0dB */
+	I2CWrite(0x18, 0x11, 0x0a); /* Set the HPR gain to 0dB */
 	I2CWrite(0x18, 0x09, 0x30); /* Power up HPL and HPR drivers */
 	I2CWrite(0x18, 0x00, 0x00); /* Select Page 0 */
 	I2CWrite(0x18, 0x3f, 0xd6); /* Power up the Left and Right DAC Channels with route the Left Audio digital data to Left Channel DAC and Right Audio digital data to Right Channel DAC */
@@ -356,11 +356,11 @@ int main(void) {
     LED_INIT();
     //printf("Hello SDR!\n");
 
-    ui_init();
-	dsp_init();
-
 	VADC_Init();
     VADC_SetupDMA();
+
+    ui_init();
+	dsp_init();
 
 	i2s_init(48000);
 

@@ -215,7 +215,10 @@ ui_update()
 	char buf[16];
 	switch (uistat.mode) {
 	case GAIN:
-		sprintf(buf, "Vol:%ddB", uistat.gain + AUDIO_GAIN_REF);
+		if (uistat.gain < -6)
+			sprintf(buf, "Vol:mute");
+		else
+			sprintf(buf, "Vol:%ddB", uistat.gain);
 		break;
 	case FREQ:
 		sprintf(buf, "%2.1fMHz", uistat.freq / 1000000);
@@ -301,8 +304,8 @@ ui_init()
 	i2clcd_str("HelloSDR");
 
 	uistat.mode = GAIN;
-	uistat.gain = 0;
-	uistat.channel = 0;
+	uistat.gain = 10;
+	uistat.channel = 1;
 	uistat.freq = 82500000;
 	uistat.tp = 0;
 	ui_update();
