@@ -272,6 +272,8 @@ struct {
 	float32_t delta_cos[12];
 	float32_t delta_sin[12];
 	int16_t corr;
+	int16_t corr_ave;
+	int16_t corr_std;
 	int32_t sdi;
 	int32_t sdq;
 } stereo_separate_state;
@@ -369,6 +371,13 @@ void stereo_separate()
 		stereo_separate_state.step_cos = step_cos;
 		stereo_separate_state.step_sin = step_sin;
 		stereo_separate_state.corr = corr;
+
+		stereo_separate_state.corr_ave = (stereo_separate_state.corr_ave * 15 + corr) / 16;
+		int32_t d = stereo_separate_state.corr_ave - corr;
+		int32_t sd = (stereo_separate_state.corr_std * 15 + d * d) / 16;
+		if (sd > 32767)
+			sd = 32767;
+		stereo_separate_state.corr_std = sd;
 	}
 }
 

@@ -90,6 +90,11 @@ extern volatile int32_t capture_count;
 #define LED_OFF()		 (LPC_GPIO_PORT->CLR[0] = (1UL << 8))
 #define LED_TOGGLE()	 (LPC_GPIO_PORT->NOT[0] = (1UL << 8))
 
+#define ROTLED_INIT()	     (LPC_GPIO_PORT->DIR[1] |= (1UL << 3)|(1UL << 4))
+#define ROTLED_RED()		 do{LPC_GPIO_PORT->SET[1] |= (1UL << 3);LPC_GPIO_PORT->CLR[1] = (1UL << 4);}while(0)
+#define ROTLED_GREEN()		 do{LPC_GPIO_PORT->SET[1] |= (1UL << 4);LPC_GPIO_PORT->CLR[1] = (1UL << 3);}while(0)
+#define ROTLED_OFF()		 (LPC_GPIO_PORT->CLR[1] = (1UL << 3)|(1UL << 4))
+
 #define TESTPOINT_INIT() \
 do {scu_pinmux(0x6, 11, PUP_DISABLE | PDN_DISABLE | SLEWRATE_SLOW | FILTER_ENABLE, FUNC0); \
 	LPC_GPIO_PORT->DIR[3] |= (1UL << 7); \

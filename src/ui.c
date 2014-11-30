@@ -203,10 +203,11 @@ struct {
 	float32_t delta_cos[12];
 	float32_t delta_sin[12];
 	int16_t corr;
+	int16_t corr_ave;
+	int16_t corr_std;
 	int32_t sdi;
 	int32_t sdq;
 } stereo_separate_state;
-
 
 
 void
@@ -260,10 +261,10 @@ ui_update()
 			sprintf(buf, "ST:%d", stereo_separate_state.corr);
 			break;
 		case 9:
-			sprintf(buf, "DQ:%d", stereo_separate_state.sdq);
+			sprintf(buf, "SAV:%d", stereo_separate_state.corr_ave);
 			break;
 		case 10:
-			sprintf(buf, "DI:%d", stereo_separate_state.sdi);
+			sprintf(buf, "SSD:%d", stereo_separate_state.corr_std);
 			break;
 		case 11:
 			sprintf(buf, "NA:%f", stereo_separate_state.carrier_i*stereo_separate_state.carrier_i+stereo_separate_state.carrier_q*stereo_separate_state.carrier_q);
@@ -282,6 +283,14 @@ ui_update()
 	i2clcd_pos(0, 1);
 	i2clcd_str(buf);
 	i2clcd_str("        ");
+
+	if (stereo_separate_state.corr_std < 1000) {
+		ROTLED_GREEN();
+	} else if (fm_demod_state.carrier > 1000) {
+		ROTLED_RED();
+	} else {
+		ROTLED_OFF();
+	}
 }
 
 void
@@ -290,15 +299,8 @@ ui_init()
 	scu_pinmux(1, 7, GPIO_PUP, FUNC0); // GPIO1-0
 	scu_pinmux(1, 8, GPIO_PUP, FUNC0); // GPIO1-1
 	scu_pinmux(1, 9, GPIO_PUP, FUNC0); // GPIO1-2
-
-	GPIO_SetDir(0,1<<8, 1);
-	GPIO_ClearValue(0,1<<8);
-
-	GPIO_SetDir(1,0x7, 0);
-	GPIO_SetDir(1,1<<3, 1);
-	GPIO_SetDir(1,1<<4, 1);
-	GPIO_ClearValue(1,1<<3);
-	GPIO_ClearValue(1,1<<4);
+	LED_INIT();
+	ROTLED_INIT();
 
 	i2clcd_init();
 	i2clcd_str("HelloSDR");
