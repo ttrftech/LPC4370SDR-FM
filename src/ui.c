@@ -162,11 +162,12 @@ int btn_check()
 #define FREQ_STEP	100000
 
 static struct {
-	enum { GAIN, CHANNEL, FREQ, TESTP, MODE_MAX } mode;
+	enum { GAIN, CHANNEL, FREQ, TESTP, DEBUGMODE, MODE_MAX } mode;
 	int gain;
 	int channel;
 	float32_t freq;
 	int tp;
+	int debugmode;
 } uistat;
 
 static float32_t channel_freqs[CHANNEL_MAX] = {
@@ -255,7 +256,7 @@ ui_update()
 			break;
 		}
 		case 7:
-			sprintf(buf, "CAR:%d", fm_demod_state.carrier);
+			sprintf(buf, "CR:%d", fm_demod_state.carrier);
 			break;
 		case 8:
 			sprintf(buf, "ST:%d", stereo_separate_state.corr);
@@ -277,6 +278,13 @@ ui_update()
 			break;
 		}
 		break;
+	case DEBUGMODE:
+		if (uistat.debugmode) {
+			sprintf(buf, "DMA:HALT");
+		} else {
+			sprintf(buf, "DMA:RUN");
+		}
+		break;
 	default:
 		return;
 	}
@@ -286,7 +294,7 @@ ui_update()
 
 	if (stereo_separate_state.corr_std < 1000) {
 		ROTLED_GREEN();
-	} else if (fm_demod_state.carrier > 1000) {
+	} else if (fm_demod_state.carrier > 10000) {
 		ROTLED_RED();
 	} else {
 		ROTLED_OFF();
@@ -310,6 +318,7 @@ ui_init()
 	uistat.channel = 1;
 	uistat.freq = 82500000;
 	uistat.tp = 0;
+	uistat.debugmode = 0;
 	ui_update();
 
 	nco_set_frequency(uistat.freq);
@@ -360,6 +369,15 @@ ui_process()
 			if (status & ENCODER_DOWN)
 				uistat.tp--;
 			uistat.tp &= TP_MAX-1; // assume 2^n
+		} else if (uistat.mode == DEBUGMODE) {
+			if (status & ENCODER_UP) {
+				uistat.debugmode = 1;
+				DMA_HALT();
+			}
+			if (status & ENCODER_DOWN) {
+				uistat.debugmode = 0;
+				DMA_RUN();
+			}
 		}
 		ui_update();
 

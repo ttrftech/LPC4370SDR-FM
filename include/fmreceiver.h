@@ -23,8 +23,8 @@
 #define NCO_TABLE_SIZE		0x800
 #define NCO_SAMPLES			1024
 //#define NCO_AMPL			32
-#define NCO_AMPL			64
-//#define NCO_AMPL			(SHRT_MAX / 128)
+//#define NCO_AMPL			64
+#define NCO_AMPL			(SHRT_MAX / 128)
 //#define NCO_AMPL			(SHRT_MAX / 64)
 //#define NCO_AMPL			(SHRT_MAX / 32)
 //#define NCO_AMPL			(SHRT_MAX / 16)
@@ -37,7 +37,7 @@
 /*  0x10000 / 2 / 16 */
 #define FIR_BUFFER_SIZE		0x800
 #define FIR_STATE_SIZE		0x40
-#define FIR_GAINBITS		6	/* 0 ~ 6 */
+#define FIR_GAINBITS		5	/* 0 ~ 6 */
 
 #define DEMOD_BUFFER 		((q15_t*)0x10088000)
 #define DEMOD_BUFFER_SIZE	0x800
@@ -104,6 +104,8 @@ do {scu_pinmux(0x6, 11, PUP_DISABLE | PDN_DISABLE | SLEWRATE_SLOW | FILTER_ENABL
 #define TESTPOINT_TOGGLE()	(LPC_GPIO_PORT->NOT[3] = (1UL << 7))
 #define TESTPOINT_SPIKE()	TESTPOINT_TOGGLE();TESTPOINT_TOGGLE()
 
-#define HALT_DMA()	(LPC_GPDMA->C0CONFIG |= (1 << 18))
+#define DMA_HALT()	(LPC_GPDMA->C0CONFIG |= (1 << 18))
+#define DMA_RUN()	(LPC_GPDMA->C0CONFIG &= ~(1 << 18))
+//#define DMA_RUN()	(LPC_GPDMA->C0CONFIG = (0x1)|(VADC_DMA_READ << 1)|(0x0 << 6)|(0x2 << 11)|(0x1 << 14)|(0x1 << 15))
 
 #endif /* __FMRECEIVER_H__ */
