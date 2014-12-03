@@ -249,9 +249,9 @@ void fm_demod()
 	int32_t n = __SMUAD(x0, x0) >> DEMOD_GAINBITS;
 	for (i = 0; i < length; i++) {
 		uint32_t x1 = src[i];
-#if 0
+#if 1
 		// I*(I-I0)-Q*(Q-Q0)
-		int32_t d = __SMUSDX(__SSUB16(x1, x0), x1);
+		int32_t d = __SMUSDX(__QSUB16(x1, x0), x1);
 		// I^2 + Q^2
 		n = __SMUAD(x1, x1) >> DEMOD_GAINBITS;
 		int32_t y = d / n;
@@ -260,7 +260,7 @@ void fm_demod()
 		//dest[i] = __SSAT((y * ((1<<12) + (y>>2) * (y>>2) / 3)) >> 14, 16);
 		//dest[i] = __SSAT((y * (32768 - y * ((y*7838 + 6226)>>16))) >> 15, 16);
 #endif
-#if 1
+#if 0
 		int32_t re = __SMUAD(x1, x0);	// I0*I1 + Q0*Q1
 		int32_t im = __SMUSDX(x1, x0);	// I0*Q1 - I1*Q0
 		int32_t ang = 0;
@@ -587,8 +587,8 @@ void stereo_matrix()
 	for (i = 0; i < RESAMPLE_BUFFER_SIZE/4; i++) {
 		uint32_t x1 = *s1;
 		uint32_t x2 = *s2;
-		uint32_t l = __SADD16(x1, x2);
-		uint32_t r = __SSUB16(x1, x2);
+		uint32_t l = __QADD16(x1, x2);
+		uint32_t r = __QSUB16(x1, x2);
 		*s1++ = l;
 		*s2++ = r;
 	}

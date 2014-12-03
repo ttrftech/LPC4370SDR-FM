@@ -44,7 +44,7 @@
 #define DEMOD_BUFFER 		((q15_t*)0x10088000)
 #define DEMOD_BUFFER_SIZE	0x800
 //#define DEMOD_GAINBITS		6	/* 0 ~ 6 */
-#define DEMOD_GAINBITS		9	/* 0 ~ 10 */
+#define DEMOD_GAINBITS		8	/* 0 ~ 10 */
 
 #define RESAMPLE_STATE 		((q15_t*)0x10089000)
 #define RESAMPLE_STATE_SIZE	0x100
