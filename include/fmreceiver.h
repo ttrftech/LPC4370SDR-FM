@@ -4,6 +4,8 @@
 #include <arm_math.h>
 #include <lpc43xx_gpio.h>
 
+#define STEREO	1
+
 #define AUDIO_RATE			48000
 #define IF_RATE				(13 * AUDIO_RATE / 2)
 #define DECIMATION_RATIO	32
@@ -48,7 +50,7 @@
 #define RESAMPLE_STATE_SIZE	0x100
 #define RESAMPLE_BUFFER 	((q15_t*)0x10089100)
 #define RESAMPLE_BUFFER_SIZE 0x400
-#define RESAMPLE_GAINBITS	4	/* 0 ~ 6 */
+#define RESAMPLE_GAINBITS	3	/* 0 ~ 6 */
 
 #define RESAMPLE2_STATE 		((q15_t*)0x10089500)
 #define RESAMPLE2_STATE_SIZE	0x100
