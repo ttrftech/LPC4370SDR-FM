@@ -249,7 +249,7 @@ void fm_demod()
 	int32_t n = __SMUAD(x0, x0) >> DEMOD_GAINBITS;
 	for (i = 0; i < length; i++) {
 		uint32_t x1 = src[i];
-#if 1
+#if 0
 		// I*(I-I0)-Q*(Q-Q0)
 		int32_t d = __SMUSDX(__QSUB16(x1, x0), x1);
 		// I^2 + Q^2
@@ -260,7 +260,7 @@ void fm_demod()
 		//dest[i] = __SSAT((y * ((1<<12) + (y>>2) * (y>>2) / 3)) >> 14, 16);
 		//dest[i] = __SSAT((y * (32768 - y * ((y*7838 + 6226)>>16))) >> 15, 16);
 #endif
-#if 0
+#if 1
 		int32_t re = __SMUAD(x1, x0);	// I0*I1 + Q0*Q1
 		int32_t im = __SMUSDX(x1, x0);	// I0*Q1 - I1*Q0
 		int32_t ang = 0;
@@ -268,12 +268,13 @@ void fm_demod()
 		uint32_t d, f;
 		uint16_t a, b;
 		int idx;
-		if (im < 0) {
-			im = -im;
-			neg = !neg;
-		}
 		if (re < 0) {
 			re = -re;
+			neg = !neg;
+			ang += 25736 * 4;
+		}
+		if (im < 0) {
+			im = -im;
 			neg = !neg;
 		}
 		if (im >= re) {
@@ -281,11 +282,11 @@ void fm_demod()
 			im = re;
 			re = x;
 			neg = !neg;
-			ang = -25736 * 2;
+			ang += -25736 * 2;
 		}
 #if 1
-		d = im << 1;
-		d /= re >> 15;
+		d = im << 0;
+		d /= re >> 16;
 #else
 		float32_t x = (float32_t)im * 65536;
 		d = x / re;
@@ -403,8 +404,8 @@ void stereo_separate()
 	stereo_separate_state.carrier_i = carr_i / ampl;
 	stereo_separate_state.carrier_q = carr_q / ampl;
 
-	di = (stereo_separate_state.sdi * 19 + di) / 20;
-	dq = (stereo_separate_state.sdq * 19 + dq) / 20;
+	di = (stereo_separate_state.sdi * 31 + di) / 32;
+	dq = (stereo_separate_state.sdq * 31 + dq) / 32;
 	stereo_separate_state.sdi = di;
 	stereo_separate_state.sdq = dq;
 	if (di > 0) {

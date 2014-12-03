@@ -8,13 +8,11 @@
 
 #define AUDIO_RATE			48000
 #define IF_RATE				(13 * AUDIO_RATE / 2)
-#define DECIMATION_RATIO	32
-#define ADC_RATE			(DECIMATION_RATIO * IF_RATE)
+#define CIC_DECIMATION_RATIO	16
+#define FIR_DECIMATION_RATIO	2
+#define ADC_RATE			(CIC_DECIMATION_RATIO * FIR_DECIMATION_RATIO * IF_RATE)
 
 
-//#define CAPTUREBUFFER		((uint8_t*)0x20000000)
-//#define CAPTUREBUFFER_SIZE	0x10000
-//#define CAPTUREBUFFER		((uint8_t*)0x20008000)
 #define CAPTUREBUFFER_SIZE	0x10000
 #define CAPTUREBUFFER0		((uint8_t*)0x20000000)
 #define CAPTUREBUFFER1		((uint8_t*)0x20008000)
@@ -44,7 +42,7 @@
 #define DEMOD_BUFFER 		((q15_t*)0x10088000)
 #define DEMOD_BUFFER_SIZE	0x800
 //#define DEMOD_GAINBITS		6	/* 0 ~ 6 */
-#define DEMOD_GAINBITS		8	/* 0 ~ 10 */
+#define DEMOD_GAINBITS		9	/* 0 ~ 10 */
 
 #define RESAMPLE_STATE 		((q15_t*)0x10089000)
 #define RESAMPLE_STATE_SIZE	0x100
@@ -108,6 +106,5 @@ do {scu_pinmux(0x6, 11, PUP_DISABLE | PDN_DISABLE | SLEWRATE_SLOW | FILTER_ENABL
 
 #define DMA_HALT()	(LPC_GPDMA->C0CONFIG |= (1 << 18))
 #define DMA_RUN()	(LPC_GPDMA->C0CONFIG &= ~(1 << 18))
-//#define DMA_RUN()	(LPC_GPDMA->C0CONFIG = (0x1)|(VADC_DMA_READ << 1)|(0x0 << 6)|(0x2 << 11)|(0x1 << 14)|(0x1 << 15))
 
 #endif /* __FMRECEIVER_H__ */
