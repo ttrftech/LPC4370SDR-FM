@@ -237,6 +237,9 @@ const int16_t arctantbl[256+2] = {
 	       25478, 25543, 25607, 25672, 25736, 25736
 };
 
+#define Q15_PI_4	25736	// 3.14159/4*32768
+
+
 __RAMFUNC(RAM)
 void fm_demod()
 {
@@ -271,7 +274,7 @@ void fm_demod()
 		if (re < 0) {
 			re = -re;
 			neg = !neg;
-			ang += 25736 * 4;
+			ang += Q15_PI_4 * 4;
 		}
 		if (im < 0) {
 			im = -im;
@@ -282,7 +285,7 @@ void fm_demod()
 			im = re;
 			re = x;
 			neg = !neg;
-			ang += -25736 * 2;
+			ang += -Q15_PI_4 * 2;
 		}
 #if 1
 		d = im << 0;
