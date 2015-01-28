@@ -36,22 +36,38 @@ void nco_set_frequency(float32_t freq)
 #define FIR_NUM_TAPS			32
 
 q15_t fir_coeff[FIR_NUM_TAPS] = {
-#if 1
+#if 0
 			// original coeff
 			-204,   -42,   328,   144,  -687,  -430,  1301,  1060, -2162,
 		   -2298,  3208,  4691, -4150, -9707,  3106, 22273, 22273,  3106,
 		   -9707, -4150,  4691,  3208, -2298, -2162,  1060,  1301,  -430,
 			-687,   144,   328,   -42,  -204
 #else
+#if 0
 			// bw*1.5
 			 -414,    384,    -26,   -730,   1457,  -1183,   -755,   3523,
 			-4611,   1579,   5072, -10479,   7881,   5033, -19714,  16931,
 			16931, -19714,   5033,   7881, -10479,   5072,   1579,  -4611,
 			 3523,   -755,  -1183,   1457,   -730,    -26,    384,   -414
+#else
+#if 0
+			 // bw*1.5, flat
+			 -55,    62,   -26,   -77,   210,  -242,    31,   409,  -801,
+			 698,   174, -1569,  2597, -1942, -2137, 19028, 19028, -2137,
+		   -1942,  2597, -1569,   174,   698,  -801,   409,    31,  -242,
+			 210,   -77,   -26,    62,   -55
+#else
+			 // bw=156kHz, flat
+			 -59,    -5,    96,    24,  -208,   -82,   411,   213,  -732,
+			-480,  1240,  1027, -2176, -2424,  5158, 14351, 14351,  5158,
+		   -2424, -2176,  1027,  1240,  -480,  -732,   213,   411,   -82,
+			-208,    24,    96,    -5,   -59
+#endif
+#endif
 #endif
 };
 
-typedef struct {
+/*typedef struct {
 	q15_t *result;
 	int16_t *nco_base;
 	int32_t s0;
@@ -61,19 +77,55 @@ typedef struct {
 	int32_t d1;
 	int32_t d2;
 	int32_t dest;
-} CICState;
+	uint32_t offset;
+} cic_state_t;
+*/
 
-static CICState cic_i;
-static CICState cic_q;
+cic_state_t cic_i;
+cic_state_t cic_q;
 
 __RAMFUNC(RAM)
-void cic_decimate(CICState *cic, uint8_t *buf, int len)
+static uint32_t compute_adc_dc_offset(uint8_t *buf, int len)
 {
-	//const uint32_t offset = 0x08000800;
-	const uint32_t offset = 0x08800880;
-	int16_t *const result = (int16_t*)(cic->result);
+	uint16_t *const capture = (uint16_t*)buf;
+	int count = len / sizeof(uint16_t);
+	uint32_t acc = 0;
+	uint16_t offset;
+	int i = 0;
+	for (i = 0; i < count; i++)
+		acc += capture[i];
+	offset = acc / count;
+	// place same 2 offset values on uint32_t
+	return __PKHBT(offset, offset, 16);
+}
+
+static void cic_init(void)
+{
+	memset(&cic_i, 0, sizeof cic_i);
+	memset(&cic_q, 0, sizeof cic_q);
+	cic_i.dest = I_FIR_BUFFER;
+	cic_i.nco_base = NCO_SIN_TABLE;
+	cic_q.dest = Q_FIR_BUFFER;
+	cic_q.nco_base = NCO_COS_TABLE;
+	cic_i.dc_offset = 0x08800880;
+	cic_q.dc_offset = 0x08800880;
+}
+
+void
+update_adc_dc_offset(void)
+{
+	uint32_t offset = compute_adc_dc_offset(CAPTUREBUFFER0, CAPTUREBUFFER_SIZEHALF);
+	cic_i.dc_offset = offset;
+	cic_q.dc_offset = offset;
+}
+
+__RAMFUNC(RAM)
+void cic_decimate(cic_state_t *cic, uint8_t *buf, int len)
+{
+	const uint32_t offset = cic->dc_offset;
+	int16_t *const dest = (int16_t*)cic->dest;
 	uint32_t *const capture = (uint32_t*)buf;
-	const uint32_t *const nco_base = (uint32_t*)(cic->nco_base);
+	const uint32_t *const nco_base = (uint32_t*)cic->nco_base;
 
 	int32_t s0 = cic->s0;
 	int32_t s1 = cic->s1;
@@ -84,10 +136,9 @@ void cic_decimate(CICState *cic, uint8_t *buf, int len)
 	int32_t e0, e1, e2;
 	int i, l;
 
-	l = cic->dest;
+	l = cic->dest_idx;
 	for (i = 0; i < len / 4; ) {
 		int j;
-		const uint32_t *nco = nco_base;
 		for (j = 0; j < NCO_SAMPLES/2; ) {
 #if 1 /* unroll manually */
 #define CIC0()	do { \
@@ -104,7 +155,7 @@ void cic_decimate(CICState *cic, uint8_t *buf, int len)
 			int k;
 			for (k = 0; k < DECIMATION_RATIO / 2; k++) {
 				uint32_t x = capture[i++];
-				uint32_t f = *nco++;
+				uint32_t f = nco_base[j];
 				x = __SSUB16(x, offset);
 				s0 = __SMLAD(x, f, s0);
 				s1 += s0;
@@ -118,11 +169,11 @@ void cic_decimate(CICState *cic, uint8_t *buf, int len)
 			d1 = e0;
 			e2 = d2 - e1;
 			d2 = e1;
-			result[l++] = __SSAT(e2 >> (16 - FIR_GAINBITS), 16);
+			dest[l++] = __SSAT(e2 >> (16 - FIR_GAINBITS), 16);
 			l %=  FIR_BUFFER_SIZE/2;
 		}
 	}
-	cic->dest = l;
+	cic->dest_idx = l;
 	cic->s0 = s0;
 	cic->s1 = s1;
 	cic->s2 = s2;
@@ -188,15 +239,15 @@ void fir_filter_iq()
 
 	uint32_t *state_i = (uint32_t *)I_FIR_STATE;
 	for (i = 0; i < FIR_STATE_SIZE; i += 4) {
-		*state_i++ = *in_i++;
-	    //__asm__ volatile ("ldr r0, [%0, %2]\n"
-	    //				  "str r0, [%1, %2]\n" :: "l"(in_i), "l"(state_i), "X"(i): "r0");
+		//*state_i++ = *in_i++;
+	    __asm__ volatile ("ldr r0, [%0, %2]\n"
+	    				  "str r0, [%1, %2]\n" :: "l"(in_i), "l"(state_i), "X"(i): "r0");
 	}
 	uint32_t *state_q = (uint32_t *)Q_FIR_STATE;
 	for (i = 0; i < FIR_STATE_SIZE; i += 4) {
-		*state_q++ = *in_q++;
-	    //__asm__ volatile ("ldr r0, [%0, %2]\n"
-	    //				  "str r0, [%1, %2]\n" :: "l"(in_q), "l"(state_q), "X"(i): "r0");
+		//*state_q++ = *in_q++;
+	    __asm__ volatile ("ldr r0, [%0, %2]\n"
+	    				  "str r0, [%1, %2]\n" :: "l"(in_q), "l"(state_q), "X"(i): "r0");
 	}
 }
 
@@ -487,6 +538,8 @@ q15_t resample_fir_coeff[2][RESAMPLE_NUM_TAPS] = {
 	  5,   -8,  -17,  -19,  -14,   -5,    3,    9,   11,    9,    4,
 	 -1,   -5,   -7,   -6,   -3,    0,    3}
 #else
+#if 0
+		// designed by firwin(15e3)
 {   	   0,   -1,   -3,   -5,   -7,   -8,   -9,   -9,   -8,   -6,   -3,
            0,    5,   10,   16,   21,   24,   26,   25,   21,   14,    3,
           -8,  -22,  -36,  -49,  -58,  -63,  -63,  -55,  -40,  -19,    7,
@@ -511,6 +564,33 @@ q15_t resample_fir_coeff[2][RESAMPLE_NUM_TAPS] = {
          -64,  -61,  -54,  -43,  -29,  -15,   -2,    9,   18,   23,   26,
           26,   23,   19,   13,    8,    2,   -1,   -5,   -7,   -9,   -9,
           -9,   -7,   -6,   -4,   -2,    0,    1}
+#else
+          // designed by remez [0,12e3,18.8e3,312e3]
+          {  58,   30,   16,    8,    2,   -3,   -9,  -15,  -19,  -23,  -24,
+                   -23,  -18,  -11,   -1,   10,   22,   33,   42,   48,   48,   43,
+                    32,   16,   -4,  -26,  -49,  -69,  -84,  -90,  -88,  -75,  -52,
+                   -20,   17,   59,   99,  133,  157,  166,  158,  131,   85,   24,
+                   -48, -127, -203, -268, -314, -332, -316, -261, -164,  -26,  147,
+                   350,  573,  805, 1031, 1239, 1416, 1552, 1637, 1665, 1637, 1552,
+                  1416, 1239, 1031,  805,  573,  350,  147,  -26, -164, -261, -316,
+                  -332, -314, -268, -203, -127,  -48,   24,   85,  131,  158,  166,
+                   157,  133,   99,   59,   17,  -20,  -52,  -75,  -88,  -90,  -84,
+                   -69,  -49,  -26,   -4,   16,   32,   43,   48,   48,   42,   33,
+                    22,   10,   -1,  -11,  -18,  -23,  -24,  -23,  -19,  -15,   -9,
+                    -3,    2,    8,   16,   30,   58},
+           { -85,   42,   22,   12,    5,    0,   -6,  -12,  -17,  -21,  -24,
+                   -24,  -21,  -15,   -6,    4,   16,   28,   38,   45,   49,   46,
+                    38,   24,    6,  -15,  -38,  -59,  -77,  -88,  -90,  -83,  -65,
+                   -37,   -2,   38,   79,  117,  146,  163,  164,  147,  110,   56,
+                   -11,  -87, -166, -238, -294, -327, -329, -293, -217, -100,   56,
+                   245,  460,  689,  919, 1138, 1332, 1490, 1601, 1658, 1658, 1601,
+                  1490, 1332, 1138,  919,  689,  460,  245,   56, -100, -217, -293,
+                  -329, -327, -294, -238, -166,  -87,  -11,   56,  110,  147,  164,
+                   163,  146,  117,   79,   38,   -2,  -37,  -65,  -83,  -90,  -88,
+                   -77,  -59,  -38,  -15,    6,   24,   38,   46,   49,   45,   38,
+                    28,   16,    4,   -6,  -15,  -21,  -24,  -24,  -21,  -17,  -12,
+                    -6,    0,    5,   12,   22,   42,  -85}
+#endif
 #endif
 };
 
@@ -773,12 +853,7 @@ void I2S0_IRQHandler()
 void
 dsp_init()
 {
-	memset(&cic_i, 0, sizeof cic_i);
-	memset(&cic_q, 0, sizeof cic_q);
-	cic_i.result = I_FIR_BUFFER;
-	cic_i.nco_base = NCO_SIN_TABLE;
-	cic_q.result = Q_FIR_BUFFER;
-	cic_q.nco_base = NCO_COS_TABLE;
+	cic_init();
 	//set_deemphasis(75);
 	set_deemphasis(50);
 	stereo_separate_init(19e3f);

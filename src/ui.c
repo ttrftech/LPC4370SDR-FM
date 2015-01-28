@@ -181,35 +181,9 @@ static float32_t channel_freqs[CHANNEL_MAX] = {
 		145e6f,
 };
 
-extern volatile struct {
-	uint16_t write_current;
-	uint16_t write_total;
-	uint16_t read_total;
-	uint16_t read_current;
-	uint16_t rebuffer_count;
-} audio_state;
-
-extern struct {
-	uint32_t last;
-	int32_t carrier;
-} fm_demod_state;
-
-struct {
-	float32_t carrier_i;
-	float32_t carrier_q;
-	float32_t step_cos;
-	float32_t step_sin;
-	float32_t basestep_cos;
-	float32_t basestep_sin;
-	float32_t delta_cos[12];
-	float32_t delta_sin[12];
-	int16_t corr;
-	int16_t corr_ave;
-	int16_t corr_std;
-	int32_t sdi;
-	int32_t sdq;
-} stereo_separate_state;
-
+extern audio_state_t audio_state;
+extern fm_demod_state_t fm_demod_state;
+extern stereo_separate_state_t stereo_separate_state;
 
 void
 ui_update()
@@ -273,6 +247,9 @@ ui_update()
 		case 12:
 			sprintf(buf, "SA:%f", stereo_separate_state.step_cos*stereo_separate_state.step_cos+stereo_separate_state.step_sin*stereo_separate_state.step_sin);
 			break;
+		case 13:
+			sprintf(buf, "OFS:%04x", cic_i.dc_offset & 0xffff);
+			break;
 		default:
 			sprintf(buf, "undef");
 			break;
@@ -330,14 +307,6 @@ ui_process()
 {
 	int status = btn_check();
 	if (status != 0) {
-#if 0
-		if (status & EVT_BUTTON_SINGLE_CLICK)
-			value += 10;
-		if (status & EVT_BUTTON_DOUBLE_CLICK)
-			value -= 10;
-		if (status & EVT_BUTTON_DOWN_LONG)
-			value = 0;
-#endif
 		if (status & EVT_BUTTON_SINGLE_CLICK) {
 			uistat.mode = (uistat.mode + 1) % MODE_MAX;
 		} else if (uistat.mode == GAIN) {
@@ -380,27 +349,10 @@ ui_process()
 			}
 		}
 		ui_update();
-
-#if 0
-		if (status & EVT_BUTTON_SINGLE_CLICK) {
-			//uint32_t *p = (uint32_t *)CAPTUREBUFFER;
-			//uint32_t *p = (uint32_t *)(CAPTUREBUFFER + 4094);
-			//uint32_t *p = (uint32_t *)(CAPTUREBUFFER + 16384);
-			//uint32_t *p = (uint32_t *)0x20004000;
-			uint32_t *p = (uint32_t *)0x20008000;
-			//uint32_t *p = (uint32_t *)(CAPTUREBUFFER + 32768);
-	    	sprintf(buf, "%08x", p[0]);
-	    	//sprintf(buf, "%08x%08x", LPC_VADC->FIFO_OUTPUT[0], LPC_VADC->FIFO_OUTPUT[1]);
-			//sprintf(buf, "%d  ", capture_count);
-			i2clcd_pos(0, 1);
-			i2clcd_str(buf);
-			LPC_GPDMA->C0CONFIG |= (1 << 18); //halt further requests
-
-			generate_test_tone(value);
-		}
-#endif
-	} else if (capture_count % 512 == 0)
+	} else if (capture_count % 512 == 0) {
 		ui_update();
+		update_adc_dc_offset();
+	}
 
     systick_delay(1);
 }

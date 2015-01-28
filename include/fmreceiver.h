@@ -67,6 +67,7 @@ extern void nco_set_frequency(float32_t freq);
 extern void generate_test_tone(int freq);
 extern void dsp_init();
 
+extern void update_adc_dc_offset(void);
 extern void audio_set_gain(int gain);
 
 #define AUDIO_GAIN_MAX 29
@@ -84,6 +85,54 @@ extern void setup_i2s_clock(LPC_I2Sn_Type *I2Sx, uint32_t Freq, uint8_t TRMode);
 
 
 extern volatile int32_t capture_count;
+
+
+typedef struct {
+	uint16_t write_current;
+	uint16_t write_total;
+	uint16_t read_total;
+	uint16_t read_current;
+	uint16_t rebuffer_count;
+} audio_state_t;
+
+typedef struct {
+	uint32_t last;
+	int32_t carrier;
+} fm_demod_state_t;
+
+typedef struct {
+	float32_t carrier_i;
+	float32_t carrier_q;
+	float32_t step_cos;
+	float32_t step_sin;
+	float32_t basestep_cos;
+	float32_t basestep_sin;
+	float32_t delta_cos[12];
+	float32_t delta_sin[12];
+	int16_t corr;
+	int16_t corr_ave;
+	int16_t corr_std;
+	int32_t sdi;
+	int32_t sdq;
+} stereo_separate_state_t;
+
+typedef struct {
+	q15_t *dest;
+	int16_t *nco_base;
+	int32_t dest_idx;
+	int32_t s0;
+	int32_t s1;
+	int32_t s2;
+	int32_t d0;
+	int32_t d1;
+	int32_t d2;
+	uint32_t dc_offset;
+} cic_state_t;
+
+extern cic_state_t cic_i;
+extern cic_state_t cic_q;
+
+
 
 #define LED_INIT()	     (LPC_GPIO_PORT->DIR[0] |= (1UL << 8))
 #define LED_ON()		 (LPC_GPIO_PORT->SET[0] |= (1UL << 8))
