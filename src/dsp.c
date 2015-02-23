@@ -344,10 +344,7 @@ void fm_demod()
 			im = re;
 			re = x;
 			neg = !neg;
-			if (ang < 0)
-				ang += Q15_PI_4 * 6;
-			else
-				ang += -Q15_PI_4 * 2;
+			ang = -ang - Q15_PI_4 * 2;
 		}
 #if 1
 		d = im << 0;
