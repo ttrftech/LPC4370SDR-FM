@@ -472,7 +472,7 @@ void stereo_separate()
 
 	for (i = 0; i < length; i++) {
 		float32_t x1 = src[i];
-		dest[i] = x1 * (2 * carr_i * carr_q);
+		dest[i] = x1 * (2 * carr_i * carr_q) * 2;
 		di += carr_i * x1;
 		dq += carr_q * x1;
 		float32_t new_i = carr_i * step_cos - carr_q * step_sin;
@@ -705,6 +705,7 @@ void stereo_matrix()
 	}
 }
 
+__RAMFUNC(RAM)
 __RAMFUNC(RAM)
 void resample_fir_filter_stereo()
 {
