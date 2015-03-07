@@ -40,7 +40,7 @@
 #include <lpc43xx_emc.h>
 #include <lpc43xx_i2s.h>
 
-#include "fmreceiver.h"
+#include "receiver.h"
 #include "vadc.h"
 
 /*! Frequency of external xtal */

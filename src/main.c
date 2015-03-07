@@ -53,7 +53,7 @@
 #include <stdio.h>
 #include <arm_math.h>
 
-#include "fmreceiver.h"
+#include "receiver.h"
 #include "vadc.h"
 
 
@@ -336,6 +336,7 @@ static void i2s_init(uint32_t rate)
 
 	// for MCLK output XTAL_OSC(12MHz) to TP_CLK0
 	LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_XTAL_OSC << 24;
+	//LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_PLL0_AUDIO << 24;
 	LPC_SCU->SFSCLK_0 = 0x1;
 
     // Initialize I2S

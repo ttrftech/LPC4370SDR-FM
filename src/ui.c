@@ -29,7 +29,7 @@
 #include "lpc43xx_rgu.h"
 #include "lpc43xx_scu.h"
 
-#include "fmreceiver.h"
+#include "receiver.h"
 
 
 volatile uint32_t msTicks; // counter for 1ms SysTicks

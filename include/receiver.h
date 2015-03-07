@@ -18,8 +18,8 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FMRECEIVER_H__
-#define __FMRECEIVER_H__
+#ifndef __RECEIVER_H__
+#define __RECEIVER_H__
 
 #include <arm_math.h>
 #include <lpc43xx_gpio.h>
@@ -68,7 +68,7 @@
 #define RESAMPLE_STATE_SIZE	0x100
 #define RESAMPLE_BUFFER 	((q15_t*)0x10089100)
 #define RESAMPLE_BUFFER_SIZE 0x400
-#define RESAMPLE_GAINBITS	3	/* 0 ~ 6 */
+#define RESAMPLE_GAINBITS	1	/* 0 ~ 6 */
 
 #define RESAMPLE2_STATE 		((q15_t*)0x10089500)
 #define RESAMPLE2_STATE_SIZE	0x100
@@ -176,4 +176,4 @@ do {scu_pinmux(0x6, 11, PUP_DISABLE | PDN_DISABLE | SLEWRATE_SLOW | FILTER_ENABL
 #define DMA_HALT()	(LPC_GPDMA->C0CONFIG |= (1 << 18))
 #define DMA_RUN()	(LPC_GPDMA->C0CONFIG &= ~(1 << 18))
 
-#endif /* __FMRECEIVER_H__ */
+#endif /* __RECEIVER_H__ */
