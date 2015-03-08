@@ -56,7 +56,7 @@
 #include "receiver.h"
 #include "vadc.h"
 
-#if 1
+#if 0
 #if 1
 // PLL0AUDIO: 39.936MHz = (12MHz / 25) * (416 * 2) / (5 * 2)
 #define PLL0_MSEL	416
@@ -71,11 +71,13 @@
 //#define ADCCLK_MATCHVALUE	(4 - 1)  // 39.936MHz / 4 = 9.984MHz
 #endif
 
-// PLL0AUDIO: 40MHz = (20MHz / 20) * (400 * 2) / (10 * 2)
-//#define PLL0_MSEL	500
-//#define PLL0_NSEL	25
-//#define PLL0_PSEL	10
+// PLL0AUDIO: 40MHz = (20MHz / 25) * (500 * 2) / (10 * 2)
+#define PLL0_MSEL	500
+#define PLL0_NSEL	25
+#define PLL0_PSEL	10
+
 #define ADCCLK_MATCHVALUE	(2 - 1)  // 20MHz / 2 = 10MHz
+
 
 #define FIFO_SIZE       8
 

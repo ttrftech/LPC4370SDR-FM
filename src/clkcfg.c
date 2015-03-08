@@ -168,11 +168,11 @@ void setup_pll0audio(uint32_t msel, uint32_t nsel, uint32_t psel)
   CGU_EnableEntity(CGU_BASE_VADC, DISABLE);
 
   /* source = XTAL OSC 12 MHz */
-  ClkSrc = CGU_CLKSRC_XTAL_OSC;
+  //ClkSrc = CGU_CLKSRC_XTAL_OSC;
 
-  //scu_pinmux(0xF, 4, MD_PLN_FAST, FUNC1);     // GP_CLKIN
-  //CGU_ClockSourceFrequency[CGU_CLKSRC_GP_CLKIN] = 10000000*2;
-  //ClkSrc = CGU_CLKSRC_GP_CLKIN;
+  scu_pinmux(0xF, 4, MD_PLN_FAST, FUNC1);     // GP_CLKIN
+  CGU_ClockSourceFrequency[CGU_CLKSRC_GP_CLKIN] = 10000000*2;
+  ClkSrc = CGU_CLKSRC_GP_CLKIN;
 
   /* disable clock, disable skew enable, power down pll,
   * (dis/en)able post divider, (dis/en)able pre-divider,
