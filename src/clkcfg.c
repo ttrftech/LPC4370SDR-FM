@@ -39,6 +39,7 @@
 #include <lpc43xx_cgu.h>
 #include <lpc43xx_emc.h>
 #include <lpc43xx_i2s.h>
+#include <lpc43xx_scu.h>
 
 #include "receiver.h"
 #include "vadc.h"
@@ -169,6 +170,10 @@ void setup_pll0audio(uint32_t msel, uint32_t nsel, uint32_t psel)
   /* source = XTAL OSC 12 MHz */
   ClkSrc = CGU_CLKSRC_XTAL_OSC;
 
+  //scu_pinmux(0xF, 4, MD_PLN_FAST, FUNC1);     // GP_CLKIN
+  //CGU_ClockSourceFrequency[CGU_CLKSRC_GP_CLKIN] = 10000000*2;
+  //ClkSrc = CGU_CLKSRC_GP_CLKIN;
+
   /* disable clock, disable skew enable, power down pll,
   * (dis/en)able post divider, (dis/en)able pre-divider,
   * disable free running mode, disable bandsel,
@@ -217,6 +222,7 @@ void setup_i2s_clock(LPC_I2Sn_Type *I2Sx, uint32_t Freq, uint8_t TRMode)
 	int32_t N;
 
 	CGU_EntityConnect(CGU_CLKSRC_PLL0_AUDIO, CGU_BASE_APB1);
+	//CGU_EntityConnect(CGU_CLKSRC_GP_CLKIN, CGU_BASE_APB1);
 	i2sPclk = CGU_GetPCLKFrequency(CGU_PERIPHERAL_I2S);
 	wordwidth = 16;
 	//wordwidth = 16 * 2;

@@ -56,7 +56,7 @@
 #include "receiver.h"
 #include "vadc.h"
 
-
+#if 1
 #if 1
 // PLL0AUDIO: 39.936MHz = (12MHz / 25) * (416 * 2) / (5 * 2)
 #define PLL0_MSEL	416
@@ -68,12 +68,14 @@
 #define PLL0_NSEL	15
 #define PLL0_PSEL	8
 #endif
-//#define ADCCLK_MATCHVALUE	(2 - 1)  // 40MHz / 2 = 20MHz
-#define ADCCLK_MATCHVALUE	(4 - 1)  // 40MHz / 4 = 10MHz
-//#define ADCCLK_MATCHVALUE	(8 - 1)  // 40MHz / 8 = 5MHz
-//#define ADCCLK_MATCHVALUE	(16 - 1)  // 40MHz / 16 = 2.5MHz
-#define ADCCLK_DGECI 0
+//#define ADCCLK_MATCHVALUE	(4 - 1)  // 39.936MHz / 4 = 9.984MHz
+#endif
 
+// PLL0AUDIO: 40MHz = (20MHz / 20) * (400 * 2) / (10 * 2)
+//#define PLL0_MSEL	500
+//#define PLL0_NSEL	25
+//#define PLL0_PSEL	10
+#define ADCCLK_MATCHVALUE	(2 - 1)  // 20MHz / 2 = 10MHz
 
 #define FIFO_SIZE       8
 
@@ -155,7 +157,9 @@ void VADC_SetupDMA(void)
 
 void VADC_Init(void)
 {
-  CGU_EntityConnect(CGU_CLKSRC_PLL0_AUDIO, CGU_BASE_VADC);
+  //CGU_EntityConnect(CGU_CLKSRC_PLL0_AUDIO, CGU_BASE_VADC);
+  scu_pinmux(0xF, 4, MD_PLN_FAST, FUNC1);     // GP_CLKIN
+  CGU_EntityConnect(CGU_CLKSRC_GP_CLKIN, CGU_BASE_VADC);
   CGU_EnableEntity(CGU_BASE_VADC, ENABLE);
 
 //  RGU_SoftReset(RGU_SIG_DMA);
@@ -213,11 +217,11 @@ void VADC_Init(void)
 	  (1UL<<31);       /* UPDATE_TABLE:  1=update table with all 8 descriptors of this table */
 
   LPC_VADC->ADC_SPEED =
-    ADCCLK_DGECI;   /* DGECx:      For CRS=3 all should be 0xF, for CRS=4 all should be 0xE, */
-                       /*             for all other cases it should be 0 */
+		    0x0E;   /* DGECx:      For CRS=3 all should be 0xF, for CRS=4 all should be 0xE, */
+                    /*             for all other cases it should be 0 */
 
   LPC_VADC->POWER_CONTROL =
-    (0 /*crs*/ << 0) |    /* CRS:          current setting for power versus speed programming */
+    (4 << 0) |      /* CRS:          current setting for power versus speed programming */
     (1 << 4) |      /* DCINNEG:      0=no dc bias, 1=dc bias on vin_neg slide */
     (0 << 10) |     /* DCINPOS:      0=no dc bias, 1=dc bias on vin_pos slide */
     (0 << 16) |     /* TWOS:         0=offset binary, 1=two's complement */
@@ -298,12 +302,21 @@ static void i2s_init(uint32_t rate)
 	I2CWrite(0x18, 0x00, 0x00); /* Initialize to Page 0 */
 	I2CWrite(0x18, 0x01, 0x01); /* Initialize the device through software reset */
 	I2CWrite(0x18, 0x04, 0x43); /* PLL Clock High, MCLK, PLL */
+#if 0
 	I2CWrite(0x18, 0x05, 0x91); /* Power up PLL, P=1,R=1 */
 	I2CWrite(0x18, 0x06, 0x07); /* J=7 */
 	I2CWrite(0x18, 0x07, 6);    /* D=(6 <<8) + 144 */
 	I2CWrite(0x18, 0x08, 144);
 	I2CWrite(0x18, 0x0b, 0x82); /* Power up the NDAC divider with value 2 */
 	I2CWrite(0x18, 0x0c, 0x87); /* Power up the MDAC divider with value 7 */
+#else
+	I2CWrite(0x18, 0x05, 0x91); /* Power up PLL, P=1,R=1 */
+	I2CWrite(0x18, 0x06, 0x08); /* J=8 */
+	I2CWrite(0x18, 0x07, 0);    /* D=0 */
+	I2CWrite(0x18, 0x08, 0);
+	I2CWrite(0x18, 0x0b, 0x82); /* Power up the NDAC divider with value 2 */
+	I2CWrite(0x18, 0x0c, 0x8d); /* Power up the MDAC divider with value 13 */
+#endif
 	I2CWrite(0x18, 0x0d, 0x00); /* Program the OSR of DAC to 128 */
 	I2CWrite(0x18, 0x0e, 0x80);
 	I2CWrite(0x18, 0x3c, 0x08); /* Set the DAC Mode to PRB_P8 */
@@ -328,14 +341,12 @@ static void i2s_init(uint32_t rate)
 
     // Configure I2S pins
     scu_pinmux(0x3, 0, MD_PLN_FAST, FUNC2);     // SCK
-    //scu_pinmux(0x3, 0, MD_PLN_FAST, FUNC3);     // MCLK
-    //scu_pinmux(0xC, 12, MD_PLN_FAST, FUNC6);    // SD
-/**/scu_pinmux(0x3, 1, MD_PLN_FAST, FUNC0);     // WS
-/**/scu_pinmux(0x3, 2, MD_PLN_FAST, FUNC0);    // SD
-    scu_pinmux(0xF, 4, MD_PLN_FAST, FUNC6);    // MCLK
+    scu_pinmux(0x3, 1, MD_PLN_FAST, FUNC0);     // WS
+    scu_pinmux(0x3, 2, MD_PLN_FAST, FUNC0);     // SD
 
 	// for MCLK output XTAL_OSC(12MHz) to TP_CLK0
-	LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_XTAL_OSC << 24;
+	LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_GP_CLKIN << 24;
+	//LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_XTAL_OSC << 24;
 	//LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_PLL0_AUDIO << 24;
 	LPC_SCU->SFSCLK_0 = 0x1;
 
@@ -393,7 +404,7 @@ int main(void) {
     ui_init();
 	dsp_init();
 
-	i2s_init(48000);
+	i2s_init(AUDIO_RATE);
 
 	VADC_Start();
 
