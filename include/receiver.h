@@ -24,15 +24,24 @@
 #include <arm_math.h>
 #include <lpc43xx_gpio.h>
 
+//#define EXTCLK_10MHZ	1
+
 #define STEREO	1
 
+#if EXTCLK_10MHZ
 #define AUDIO_RATE			48077
+#else
+#define AUDIO_RATE			48000
+#endif
+
 #define IF_RATE				(13 * AUDIO_RATE / 2)
 #define CIC_DECIMATION_RATIO	16
 #define FIR_DECIMATION_RATIO	2
-//#define ADC_RATE			(CIC_DECIMATION_RATIO * FIR_DECIMATION_RATIO * IF_RATE)
+#if EXTCLK_10MHZ
 #define ADC_RATE			10000000
-
+#else
+#define ADC_RATE			(CIC_DECIMATION_RATIO * FIR_DECIMATION_RATIO * IF_RATE)
+#endif
 
 #define CAPTUREBUFFER_SIZE	0x10000
 #define CAPTUREBUFFER0		((uint8_t*)0x20000000)

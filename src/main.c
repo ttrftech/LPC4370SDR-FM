@@ -56,28 +56,24 @@
 #include "receiver.h"
 #include "vadc.h"
 
-#if 0
-#if 1
+#if EXTCLK_10MHZ
+// PLL0AUDIO: 40MHz = (40MHz / 25) * (500 * 2) / (10 * 2)
+#define PLL0_MSEL	500
+#define PLL0_NSEL	50
+#define PLL0_PSEL	10
+#define ADCCLK_MATCHVALUE	(4 - 1)  // 40MHz / 2 = 10MHz
+#elif 1
 // PLL0AUDIO: 39.936MHz = (12MHz / 25) * (416 * 2) / (5 * 2)
 #define PLL0_MSEL	416
 #define PLL0_NSEL	25
 #define PLL0_PSEL	5
-#else
+#define ADCCLK_MATCHVALUE	(4 - 1)  // 39.936MHz / 4 = 9.984MHz
+#elif 0
 // PLL0AUDIO: 40MHz = (12MHz / 15) * (400 * 2) / (8 * 2)
 #define PLL0_MSEL	400
 #define PLL0_NSEL	15
 #define PLL0_PSEL	8
 #endif
-//#define ADCCLK_MATCHVALUE	(4 - 1)  // 39.936MHz / 4 = 9.984MHz
-#endif
-
-// PLL0AUDIO: 40MHz = (20MHz / 25) * (500 * 2) / (10 * 2)
-#define PLL0_MSEL	500
-#define PLL0_NSEL	25
-#define PLL0_PSEL	10
-
-#define ADCCLK_MATCHVALUE	(2 - 1)  // 20MHz / 2 = 10MHz
-
 
 #define FIFO_SIZE       8
 
@@ -159,9 +155,12 @@ void VADC_SetupDMA(void)
 
 void VADC_Init(void)
 {
-  //CGU_EntityConnect(CGU_CLKSRC_PLL0_AUDIO, CGU_BASE_VADC);
+#if EXTCLK_10MHZ
   scu_pinmux(0xF, 4, MD_PLN_FAST, FUNC1);     // GP_CLKIN
   CGU_EntityConnect(CGU_CLKSRC_GP_CLKIN, CGU_BASE_VADC);
+#else
+  CGU_EntityConnect(CGU_CLKSRC_PLL0_AUDIO, CGU_BASE_VADC);
+#endif
   CGU_EnableEntity(CGU_BASE_VADC, ENABLE);
 
 //  RGU_SoftReset(RGU_SIG_DMA);
@@ -304,7 +303,7 @@ static void i2s_init(uint32_t rate)
 	I2CWrite(0x18, 0x00, 0x00); /* Initialize to Page 0 */
 	I2CWrite(0x18, 0x01, 0x01); /* Initialize the device through software reset */
 	I2CWrite(0x18, 0x04, 0x43); /* PLL Clock High, MCLK, PLL */
-#if 0
+#if 1
 	I2CWrite(0x18, 0x05, 0x91); /* Power up PLL, P=1,R=1 */
 	I2CWrite(0x18, 0x06, 0x07); /* J=7 */
 	I2CWrite(0x18, 0x07, 6);    /* D=(6 <<8) + 144 */
@@ -347,9 +346,12 @@ static void i2s_init(uint32_t rate)
     scu_pinmux(0x3, 2, MD_PLN_FAST, FUNC0);     // SD
 
 	// for MCLK output XTAL_OSC(12MHz) to TP_CLK0
-	LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_GP_CLKIN << 24;
-	//LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_XTAL_OSC << 24;
+#if 1
+	LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_XTAL_OSC << 24;
 	//LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_PLL0_AUDIO << 24;
+#else
+    LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_GP_CLKIN << 24;
+#endif
 	LPC_SCU->SFSCLK_0 = 0x1;
 
     // Initialize I2S
