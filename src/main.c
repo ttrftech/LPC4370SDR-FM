@@ -388,11 +388,15 @@ static void i2s_init(uint32_t rate)
     NVIC_EnableIRQ(I2S0_IRQn);
 }
 
+void cos_sin_test(uint32_t *buf, int len);
+
 int main(void) {
     setup_systemclock();
     setup_pll0audio(PLL0_MSEL, PLL0_NSEL, PLL0_PSEL);
     // Setup SysTick Timer to interrupt at 1 msec intervals
 	SysTick_Config(CGU_GetPCLKFrequency(CGU_PERIPHERAL_M4CORE) / 1000);
+
+	cos_sin_test(AUDIO_TEST_BUFFER, AUDIO_BUFFER_SIZE / sizeof(uint32_t));
 
     // interrupt priority: the highest for DMA, i2s
     NVIC_SetPriority(DMA_IRQn,   ((0x01<<3)|0x01));

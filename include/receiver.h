@@ -24,7 +24,7 @@
 #include <arm_math.h>
 #include <lpc43xx_gpio.h>
 
-//#define EXTCLK_10MHZ	1
+#define EXTCLK_10MHZ	1
 
 #define STEREO	1
 
@@ -131,6 +131,7 @@ typedef struct {
 } fm_demod_state_t;
 
 typedef struct {
+#if 0
 	float32_t carrier_i;
 	float32_t carrier_q;
 	float32_t step_cos;
@@ -139,6 +140,11 @@ typedef struct {
 	float32_t basestep_sin;
 	float32_t delta_cos[12];
 	float32_t delta_sin[12];
+#else
+	uint32_t phase_accum;
+	uint32_t phase_step;
+	uint32_t phase_step_default;
+#endif
 	int16_t corr;
 	int16_t corr_ave;
 	int16_t corr_std;

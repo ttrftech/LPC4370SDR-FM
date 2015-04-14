@@ -416,25 +416,88 @@ void fm_demod()
 	fm_demod_state.carrier = n;
 }
 
-struct {
-	float32_t carrier_i;
-	float32_t carrier_q;
-	float32_t step_cos;
-	float32_t step_sin;
-	float32_t basestep_cos;
-	float32_t basestep_sin;
-	float32_t delta_cos[12];
-	float32_t delta_sin[12];
-	int16_t corr;
-	int16_t corr_ave;
-	int16_t corr_std;
-	int32_t sdi;
-	int32_t sdq;
-} stereo_separate_state;
+// state variables for stereo separation
+stereo_separate_state_t stereo_separate_state;
+
+const int16_t sin_table[256][2] = {
+{     0, -804 },{  -804, -804 },{ -1608, -802 },{ -2410, -802 },{ -3212, -799 },{ -4011, -797 },
+{ -4808, -794 },{ -5602, -791 },{ -6393, -786 },{ -7179, -783 },{ -7962, -777 },{ -8739, -773 },
+{ -9512, -766 },{ -10278, -761 },{ -11039, -754 },{ -11793, -746 },{ -12539, -740 },{ -13279, -731 },
+{ -14010, -722 },{ -14732, -714 },{ -15446, -705 },{ -16151, -695 },{ -16846, -684 },{ -17530, -674 },
+{ -18204, -664 },{ -18868, -651 },{ -19519, -640 },{ -20159, -628 },{ -20787, -616 },{ -21403, -602 },
+{ -22005, -589 },{ -22594, -576 },{ -23170, -561 },{ -23731, -548 },{ -24279, -532 },{ -24811, -518 },
+{ -25329, -503 },{ -25832, -487 },{ -26319, -471 },{ -26790, -455 },{ -27245, -438 },{ -27683, -422 },
+{ -28105, -405 },{ -28510, -388 },{ -28898, -370 },{ -29268, -353 },{ -29621, -335 },{ -29956, -317 },
+{ -30273, -298 },{ -30571, -281 },{ -30852, -261 },{ -31113, -243 },{ -31356, -224 },{ -31580, -205 },
+{ -31785, -186 },{ -31971, -166 },{ -32137, -148 },{ -32285, -127 },{ -32412, -109 },{ -32521,  -88 },
+{ -32609,  -69 },{ -32678,  -50 },{ -32728,  -29 },{ -32757,  -10 },{ -32767,   10 },{ -32757,   29 },
+{ -32728,   50 },{ -32678,   69 },{ -32609,   88 },{ -32521,  109 },{ -32412,  127 },{ -32285,  148 },
+{ -32137,  166 },{ -31971,  186 },{ -31785,  205 },{ -31580,  224 },{ -31356,  243 },{ -31113,  261 },
+{ -30852,  281 },{ -30571,  298 },{ -30273,  317 },{ -29956,  335 },{ -29621,  353 },{ -29268,  370 },
+{ -28898,  388 },{ -28510,  405 },{ -28105,  422 },{ -27683,  438 },{ -27245,  455 },{ -26790,  471 },
+{ -26319,  487 },{ -25832,  503 },{ -25329,  518 },{ -24811,  532 },{ -24279,  548 },{ -23731,  561 },
+{ -23170,  576 },{ -22594,  589 },{ -22005,  602 },{ -21403,  616 },{ -20787,  628 },{ -20159,  640 },
+{ -19519,  651 },{ -18868,  664 },{ -18204,  674 },{ -17530,  684 },{ -16846,  695 },{ -16151,  705 },
+{ -15446,  714 },{ -14732,  722 },{ -14010,  731 },{ -13279,  740 },{ -12539,  746 },{ -11793,  754 },
+{ -11039,  761 },{ -10278,  766 },{ -9512,  773 },{ -8739,  777 },{ -7962,  783 },{ -7179,  786 },
+{ -6393,  791 },{ -5602,  794 },{ -4808,  797 },{ -4011,  799 },{ -3212,  802 },{ -2410,  802 },
+{ -1608,  804 },{  -804,  804 },{     0,  804 },{   804,  804 },{  1608,  802 },{  2410,  802 },
+{  3212,  799 },{  4011,  797 },{  4808,  794 },{  5602,  791 },{  6393,  786 },{  7179,  783 },
+{  7962,  777 },{  8739,  773 },{  9512,  766 },{ 10278,  761 },{ 11039,  754 },{ 11793,  746 },
+{ 12539,  740 },{ 13279,  731 },{ 14010,  722 },{ 14732,  714 },{ 15446,  705 },{ 16151,  695 },
+{ 16846,  684 },{ 17530,  674 },{ 18204,  664 },{ 18868,  651 },{ 19519,  640 },{ 20159,  628 },
+{ 20787,  616 },{ 21403,  602 },{ 22005,  589 },{ 22594,  576 },{ 23170,  561 },{ 23731,  548 },
+{ 24279,  532 },{ 24811,  518 },{ 25329,  503 },{ 25832,  487 },{ 26319,  471 },{ 26790,  455 },
+{ 27245,  438 },{ 27683,  422 },{ 28105,  405 },{ 28510,  388 },{ 28898,  370 },{ 29268,  353 },
+{ 29621,  335 },{ 29956,  317 },{ 30273,  298 },{ 30571,  281 },{ 30852,  261 },{ 31113,  243 },
+{ 31356,  224 },{ 31580,  205 },{ 31785,  186 },{ 31971,  166 },{ 32137,  148 },{ 32285,  127 },
+{ 32412,  109 },{ 32521,   88 },{ 32609,   69 },{ 32678,   50 },{ 32728,   29 },{ 32757,   10 },
+{ 32767,  -10 },{ 32757,  -29 },{ 32728,  -50 },{ 32678,  -69 },{ 32609,  -88 },{ 32521, -109 },
+{ 32412, -127 },{ 32285, -148 },{ 32137, -166 },{ 31971, -186 },{ 31785, -205 },{ 31580, -224 },
+{ 31356, -243 },{ 31113, -261 },{ 30852, -281 },{ 30571, -298 },{ 30273, -317 },{ 29956, -335 },
+{ 29621, -353 },{ 29268, -370 },{ 28898, -388 },{ 28510, -405 },{ 28105, -422 },{ 27683, -438 },
+{ 27245, -455 },{ 26790, -471 },{ 26319, -487 },{ 25832, -503 },{ 25329, -518 },{ 24811, -532 },
+{ 24279, -548 },{ 23731, -561 },{ 23170, -576 },{ 22594, -589 },{ 22005, -602 },{ 21403, -616 },
+{ 20787, -628 },{ 20159, -640 },{ 19519, -651 },{ 18868, -664 },{ 18204, -674 },{ 17530, -684 },
+{ 16846, -695 },{ 16151, -705 },{ 15446, -714 },{ 14732, -722 },{ 14010, -731 },{ 13279, -740 },
+{ 12539, -746 },{ 11793, -754 },{ 11039, -761 },{ 10278, -766 },{  9512, -773 },{  8739, -777 },
+{  7962, -783 },{  7179, -786 },{  6393, -791 },{  5602, -794 },{  4808, -797 },{  4011, -799 },
+{  3212, -802 },{  2410, -802 },{  1608, -804 },{   804, -804 }
+};
+
+static inline
+uint32_t cos_sin(uint16_t phase)
+{
+    uint16_t sidx = phase / 256;
+    uint16_t cidx = (sidx + 64) & 0xff;
+    uint16_t mod = phase & 0xff;
+    uint32_t sd = *(uint32_t*)&sin_table[sidx];
+    uint32_t cd = *(uint32_t*)&sin_table[cidx];
+    uint32_t r = __PKHBT(0x0100, mod, 16);
+    int32_t c = __SMUAD(r, cd);
+    int32_t s = __SMUAD(r, sd);
+    c /= 256;
+    s /= 256;
+    return __PKHBT(s, c, 16);
+}
+
+#define PHASESTEP_NCO19KHz 	((19000L*65536)/IF_RATE)*65536
+
+void
+cos_sin_test(uint32_t *buf, int len)
+{
+	uint32_t phase = 0;
+	int i;
+	for (i = 0; i < len; i++) {
+		*buf++ = cos_sin(phase >> 16);
+		phase += PHASESTEP_NCO19KHz;
+	}
+}
 
 void
 stereo_separate_init(float32_t pilotfreq)
 {
+#if 0
 	float32_t angle = 2*PI * pilotfreq / IF_RATE;
 	int i;
 	stereo_separate_state.carrier_i = 1;
@@ -443,15 +506,22 @@ stereo_separate_init(float32_t pilotfreq)
 	stereo_separate_state.basestep_sin = arm_sin_f32(angle);
 	stereo_separate_state.step_cos = stereo_separate_state.basestep_cos;
 	stereo_separate_state.step_sin = stereo_separate_state.basestep_sin;
+#else
+	stereo_separate_state.phase_accum = 0;
+	stereo_separate_state.phase_step_default = pilotfreq * 65536 / IF_RATE * 65536;
+	stereo_separate_state.phase_step = stereo_separate_state.phase_step_default;
+#endif
 	stereo_separate_state.corr = 0;
 	stereo_separate_state.sdi = 0;
 	stereo_separate_state.sdq = 0;
+#if 0
 	angle /= 1024.0f;
 	for (i = 0; i < 12; i++) {
 		stereo_separate_state.delta_cos[i] = arm_cos_f32(angle);
 		stereo_separate_state.delta_sin[i] = arm_sin_f32(angle);
 		angle /= 2.0f;
 	}
+#endif
 }
 
 __RAMFUNC(RAM)
@@ -461,6 +531,7 @@ void stereo_separate()
 	int16_t *dest = (int16_t *)RESAMPLE2_BUFFER;
 	int32_t length = RESAMPLE_BUFFER_SIZE / sizeof(int16_t);
 	int i;
+#if 0
 	float32_t carr_i = stereo_separate_state.carrier_i;
 	float32_t carr_q = stereo_separate_state.carrier_q;
 	float32_t ampl;
@@ -468,9 +539,16 @@ void stereo_separate()
 	float32_t step_sin = stereo_separate_state.step_sin;
 	float32_t di = 0;
 	float32_t dq = 0;
+#else
+	int32_t di = 0;
+	int32_t dq = 0;
+	uint32_t phase_accum = stereo_separate_state.phase_accum;
+	uint32_t phase_step = stereo_separate_state.phase_step;
+#endif
 	int32_t corr = 0;
 
 	for (i = 0; i < length; i++) {
+#if 0
 		float32_t x1 = src[i];
 		dest[i] = x1 * (2 * carr_i * carr_q) * 2;
 		di += carr_i * x1;
@@ -479,14 +557,27 @@ void stereo_separate()
 		float32_t new_q = carr_i * step_sin + carr_q * step_cos;
 		carr_i = new_i;
 		carr_q = new_q;
+#else
+		int32_t x = src[i];
+		uint32_t cs = cos_sin(phase_accum >> 16);
+		int16_t s = cs & 0xffff;
+		int16_t c = cs >> 16;
+		int16_t ss = (int32_t)(c * s) >> (15-1);
+		dest[i] = (x * ss) >> (15-1);
+		di += (c * x) >> 16;
+		dq += (s * x) >> 16;
+		phase_accum += phase_step;
+#endif
 	}
+#if 0
 	arm_sqrt_f32(carr_i * carr_i + carr_q * carr_q, &ampl);
-
 	stereo_separate_state.carrier_i = carr_i / ampl;
 	stereo_separate_state.carrier_q = carr_q / ampl;
+#endif
 
-	di = (stereo_separate_state.sdi * 31 + di) / 32;
-	dq = (stereo_separate_state.sdq * 31 + dq) / 32;
+	// averaging correlation
+	di = (stereo_separate_state.sdi * 15 + di) / 16;
+	dq = (stereo_separate_state.sdq * 15 + dq) / 16;
 	stereo_separate_state.sdi = di;
 	stereo_separate_state.sdq = dq;
 	if (di > 0) {
@@ -503,6 +594,7 @@ void stereo_separate()
 			corr = -4095;
 	}
 	if (corr != 0) {
+#if 0
 		float32_t step_cos = stereo_separate_state.basestep_cos;
 		float32_t step_sin = stereo_separate_state.basestep_sin;
 		int k;
@@ -524,6 +616,16 @@ void stereo_separate()
 		}
 		stereo_separate_state.step_cos = step_cos;
 		stereo_separate_state.step_sin = step_sin;
+#else
+		phase_step = stereo_separate_state.phase_step_default - corr*30;
+		//phase_step -= corr/10;
+		if (phase_step > stereo_separate_state.phase_step_default + 10000000
+		 || phase_step < stereo_separate_state.phase_step_default - 10000000)
+			phase_step = stereo_separate_state.phase_step_default;
+		stereo_separate_state.phase_step = phase_step;
+		stereo_separate_state.phase_accum = phase_accum;
+
+#endif
 		stereo_separate_state.corr = corr;
 
 		stereo_separate_state.corr_ave = (stereo_separate_state.corr_ave * 15 + corr) / 16;

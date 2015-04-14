@@ -261,12 +261,21 @@ ui_update()
 		case 10:
 			sprintf(buf, "SSD:%d", stereo_separate_state.corr_std);
 			break;
+#if 0
 		case 11:
 			sprintf(buf, "NA:%f", stereo_separate_state.carrier_i*stereo_separate_state.carrier_i+stereo_separate_state.carrier_q*stereo_separate_state.carrier_q);
 			break;
 		case 12:
 			sprintf(buf, "SA:%f", stereo_separate_state.step_cos*stereo_separate_state.step_cos+stereo_separate_state.step_sin*stereo_separate_state.step_sin);
 			break;
+#else
+		case 11:
+			sprintf(buf, "SDI:%d", stereo_separate_state.sdi);
+			break;
+		case 12:
+			sprintf(buf, "SDQ:%d", stereo_separate_state.sdq);
+			break;
+#endif
 		case 13:
 			sprintf(buf, "OFS:%04x", cic_i.dc_offset & 0xffff);
 			break;
