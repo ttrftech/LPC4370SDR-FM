@@ -374,7 +374,7 @@ ui_process()
 				uistat.tp--;
 			uistat.tp &= TP_MAX-1; // assume 2^n
 		} else if (uistat.mode == DEBUGMODE) {
-			if ((status & ENCODER_UP) && uistat.debugmode < 3) {
+			if ((status & ENCODER_UP) && uistat.debugmode < 2) {
 				uistat.debugmode++;
 				DMA_HALT();
 				if (uistat.debugmode == 2) {

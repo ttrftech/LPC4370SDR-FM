@@ -56,7 +56,7 @@
 #include "receiver.h"
 #include "vadc.h"
 
-#if EXTCLK_10MHZ
+#if 0//EXTCLK_10MHZ
 // PLL0AUDIO: 40MHz = (40MHz / 25) * (500 * 2) / (10 * 2)
 #define PLL0_MSEL	500
 #define PLL0_NSEL	50
@@ -303,14 +303,19 @@ static void i2s_init(uint32_t rate)
 	I2CWrite(0x18, 0x00, 0x00); /* Initialize to Page 0 */
 	I2CWrite(0x18, 0x01, 0x01); /* Initialize the device through software reset */
 	I2CWrite(0x18, 0x04, 0x43); /* PLL Clock High, MCLK, PLL */
-#if 0//EXTCLK_10MHZ
+#if EXTCLK_10MHZ
 	// MCLK is 40MHz
 	I2CWrite(0x18, 0x05, 0x91); /* Power up PLL, P=1,R=1 */
 	I2CWrite(0x18, 0x06, 0x02); /* J=2 */
 	I2CWrite(0x18, 0x07, 0);    /* D=0 */
 	I2CWrite(0x18, 0x08, 0);
-	I2CWrite(0x18, 0x0b, 0x82); /* Power up the NDAC divider with value 2 */
+	I2CWrite(0x18, 0x0b, 0x81); /* Power up the NDAC divider with value 1 */
 	I2CWrite(0x18, 0x0c, 0x8d); /* Power up the MDAC divider with value 13 */
+#ifdef I2S_SLAVE
+	// codec work as i2s master
+    I2CWrite(0x18, 0x1b, 0x0c); /* Set the BCLK,WCLK as output */
+    I2CWrite(0x18, 0x1e, 0x80 + 52); /* Enable the BCLKN divider with value 52 */
+#endif
 #else
 	// MCLK is 12MHz
 	I2CWrite(0x18, 0x05, 0x91); /* Power up PLL, P=1,R=1 */
@@ -347,7 +352,7 @@ static void i2s_init(uint32_t rate)
     scu_pinmux(0x3, 1, MD_PLN_FAST, FUNC0);     // WS
     scu_pinmux(0x3, 2, MD_PLN_FAST, FUNC0);     // SD
 
-#if 0//EXTCLK_10MHZ
+#if EXTCLK_10MHZ
 	// supply GPCLK_IN:40MHz as MCLK
     LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_GP_CLKIN << 24;
 #else
@@ -369,19 +374,25 @@ static void i2s_init(uint32_t rate)
 #endif
     i2sCfg.stop      = I2S_STOP_ENABLE;
     i2sCfg.reset     = I2S_RESET_ENABLE;
+#ifdef I2S_SLAVE
+    i2sCfg.ws_sel    = I2S_SLAVE_MODE;
+#else
     i2sCfg.ws_sel    = I2S_MASTER_MODE;
+#endif
     i2sCfg.mute      = I2S_MUTE_DISABLE;
     I2S_Config(LPC_I2S0, I2S_TX_MODE, &i2sCfg);
 
     // Configure operating mode
     i2sMode.clksel = I2S_CLKSEL_FRDCLK;
     i2sMode.fpin   = I2S_4PIN_DISABLE;
-    //i2sMode.mcena  = I2S_MCLK_DISABLE;
-    i2sMode.mcena  = I2S_MCLK_ENABLE;
+    i2sMode.mcena  = I2S_MCLK_DISABLE;
+    //i2sMode.mcena  = I2S_MCLK_ENABLE;
     I2S_ModeConfig(LPC_I2S0, &i2sMode, I2S_TX_MODE);
 
+#ifndef I2S_SLAVE
     // Configure sampling frequency
-    setup_i2s_clock(LPC_I2S0, rate, I2S_TX_MODE);
+    //setup_i2s_clock(LPC_I2S0, rate, I2S_TX_MODE);
+#endif
 
     I2S_Stop(LPC_I2S0, I2S_TX_MODE);
 
@@ -395,11 +406,13 @@ void cos_sin_test(uint32_t *buf, int len);
 
 int main(void) {
     setup_systemclock();
+#ifndef I2S_SLAVE
     setup_pll0audio(PLL0_MSEL, PLL0_NSEL, PLL0_PSEL);
+#endif
     // Setup SysTick Timer to interrupt at 1 msec intervals
 	SysTick_Config(CGU_GetPCLKFrequency(CGU_PERIPHERAL_M4CORE) / 1000);
 
-	cos_sin_test(AUDIO_TEST_BUFFER, AUDIO_BUFFER_SIZE / sizeof(uint32_t));
+	//cos_sin_test(AUDIO_TEST_BUFFER, AUDIO_BUFFER_SIZE / sizeof(uint32_t));
 
     // interrupt priority: the highest for DMA, i2s
     NVIC_SetPriority(DMA_IRQn,   ((0x01<<3)|0x01));
@@ -416,8 +429,8 @@ int main(void) {
 	dsp_init();
 
 	//generate_test_tone((float)AUDIO_RATE/48);
-	i2s_init(AUDIO_RATE);
-	//i2s_init(48000);
+	//i2s_init(AUDIO_RATE);
+	i2s_init(48000);
 
 	VADC_Start();
 

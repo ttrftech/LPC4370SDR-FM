@@ -25,6 +25,7 @@
 #include <lpc43xx_gpio.h>
 
 #define EXTCLK_10MHZ	1
+#define I2S_SLAVE		1
 
 #define STEREO	1
 

@@ -167,7 +167,7 @@ void setup_pll0audio(uint32_t msel, uint32_t nsel, uint32_t psel)
   //CGU_EnableEntity(CGU_BASE_PERIPH, DISABLE);
   CGU_EnableEntity(CGU_BASE_VADC, DISABLE);
 
-#if EXTCLK_10MHZ
+#if 0//EXTCLK_10MHZ
   scu_pinmux(0xF, 4, MD_PLN_FAST, FUNC1);     // GP_CLKIN
   CGU_ClockSourceFrequency[CGU_CLKSRC_GP_CLKIN] = 10000000*4;
   ClkSrc = CGU_CLKSRC_GP_CLKIN;
@@ -223,8 +223,9 @@ void setup_i2s_clock(LPC_I2Sn_Type *I2Sx, uint32_t Freq, uint8_t TRMode)
 	uint16_t ErrorOptimal = 0xFFFF;
 	int32_t N;
 
-	CGU_EntityConnect(CGU_CLKSRC_PLL0_AUDIO, CGU_BASE_APB1);
+	//CGU_EntityConnect(CGU_CLKSRC_PLL0_AUDIO, CGU_BASE_APB1);
 	//CGU_EntityConnect(CGU_CLKSRC_GP_CLKIN, CGU_BASE_APB1);
+	//CGU_EntityConnect(CGU_CLKSRC_GP_CLKIN, CGU_BASE_APLL);
 	i2sPclk = CGU_GetPCLKFrequency(CGU_PERIPHERAL_I2S);
 	wordwidth = 16;
 	//wordwidth = 16 * 2;
@@ -278,6 +279,7 @@ void setup_i2s_clock(LPC_I2Sn_Type *I2Sx, uint32_t Freq, uint8_t TRMode)
 	if (TRMode == I2S_TX_MODE)// Transmitter
 	{
 		I2Sx->TXBITRATE = N - 1;
+		//I2Sx->TXBITRATE = 0; // for I2S slave
 		I2Sx->TXRATE = y_divide | (x_divide << 8);
 	} else //Receiver
 	{
