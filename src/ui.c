@@ -285,10 +285,16 @@ ui_update()
 		}
 		break;
 	case DEBUGMODE:
-		if (uistat.debugmode) {
-			sprintf(buf, "DMA:HALT");
-		} else {
+	    switch (uistat.debugmode) {
+	    case 0:
 			sprintf(buf, "DMA:RUN");
+			break;
+	    case 1:
+			sprintf(buf, "DMA:HALT");
+			break;
+	    case 2:
+			sprintf(buf, "DMA:TONE");
+			break;
 		}
 		break;
 	default:
@@ -368,13 +374,17 @@ ui_process()
 				uistat.tp--;
 			uistat.tp &= TP_MAX-1; // assume 2^n
 		} else if (uistat.mode == DEBUGMODE) {
-			if (status & ENCODER_UP) {
-				uistat.debugmode = 1;
+			if ((status & ENCODER_UP) && uistat.debugmode < 3) {
+				uistat.debugmode++;
 				DMA_HALT();
+				if (uistat.debugmode == 2) {
+					generate_test_tone(1000.0f);
+				}
 			}
-			if (status & ENCODER_DOWN) {
-				uistat.debugmode = 0;
-				DMA_RUN();
+			if ((status & ENCODER_DOWN) && uistat.debugmode > 0) {
+				uistat.debugmode--;
+				if (uistat.debugmode == 0)
+					DMA_RUN();
 			}
 		}
 		ui_update();

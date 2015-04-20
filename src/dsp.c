@@ -843,8 +843,10 @@ void resample_fir_filter_stereo()
 		// deemphasis with time constant
 		val1 = (float)acc1 * resample_state.deemphasis_rest + val1 * resample_state.deemphasis_mult;
 		val2 = (float)acc2 * resample_state.deemphasis_rest + val2 * resample_state.deemphasis_mult;
-		dest[cur++] = __SSAT((int32_t)(val1+val2) >> (16 - RESAMPLE_GAINBITS), 16);
-		dest[cur++] = __SSAT((int32_t)(val1-val2) >> (16 - RESAMPLE_GAINBITS), 16);
+		//dest[cur++] = __SSAT((int32_t)(val1+val2) >> (16 - RESAMPLE_GAINBITS), 16);
+		//dest[cur++] = __SSAT((int32_t)(val1-val2) >> (16 - RESAMPLE_GAINBITS), 16);
+		dest[cur++] = __SSAT((int32_t)(val1) >> (16 - RESAMPLE_GAINBITS), 16);
+		dest[cur++] = __SSAT((int32_t)(val1) >> (16 - RESAMPLE_GAINBITS), 16);
 		//dest[cur++] = 0;
 		cur %= AUDIO_BUFFER_SIZE / 2;
 		audio_state.write_total += 2;
@@ -895,11 +897,12 @@ void generate_test_tone(int freq)
 {
 	int i;
 	int16_t *buf = (int16_t*)AUDIO_BUFFER;
-	int samples = AUDIO_BUFFER_SIZE / 2;
-	int n = freq * samples / 48000;
-	for (i = 0; i < AUDIO_BUFFER_SIZE / 2; i++) {
-		float res = arm_sin_f32(((float)i * 2.0 * PI * n) / 4096);
-		buf[i] = (int)(res * 20000.0);
+	int samples = AUDIO_BUFFER_SIZE / 2 / 2;
+	int n = freq * samples / AUDIO_RATE;
+	for (i = 0; i < samples; i++) {
+		float res = arm_sin_f32(((float)i * 2.0 * PI * n) / samples);
+		buf[i*2  ] = (int)(res * 8000.0);
+		buf[i*2+1] = (int)(res * 8000.0);
 	}
 }
 

@@ -303,20 +303,22 @@ static void i2s_init(uint32_t rate)
 	I2CWrite(0x18, 0x00, 0x00); /* Initialize to Page 0 */
 	I2CWrite(0x18, 0x01, 0x01); /* Initialize the device through software reset */
 	I2CWrite(0x18, 0x04, 0x43); /* PLL Clock High, MCLK, PLL */
-#if 1
+#if 0//EXTCLK_10MHZ
+	// MCLK is 40MHz
+	I2CWrite(0x18, 0x05, 0x91); /* Power up PLL, P=1,R=1 */
+	I2CWrite(0x18, 0x06, 0x02); /* J=2 */
+	I2CWrite(0x18, 0x07, 0);    /* D=0 */
+	I2CWrite(0x18, 0x08, 0);
+	I2CWrite(0x18, 0x0b, 0x82); /* Power up the NDAC divider with value 2 */
+	I2CWrite(0x18, 0x0c, 0x8d); /* Power up the MDAC divider with value 13 */
+#else
+	// MCLK is 12MHz
 	I2CWrite(0x18, 0x05, 0x91); /* Power up PLL, P=1,R=1 */
 	I2CWrite(0x18, 0x06, 0x07); /* J=7 */
 	I2CWrite(0x18, 0x07, 6);    /* D=(6 <<8) + 144 */
 	I2CWrite(0x18, 0x08, 144);
 	I2CWrite(0x18, 0x0b, 0x82); /* Power up the NDAC divider with value 2 */
 	I2CWrite(0x18, 0x0c, 0x87); /* Power up the MDAC divider with value 7 */
-#else
-	I2CWrite(0x18, 0x05, 0x91); /* Power up PLL, P=1,R=1 */
-	I2CWrite(0x18, 0x06, 0x08); /* J=8 */
-	I2CWrite(0x18, 0x07, 0);    /* D=0 */
-	I2CWrite(0x18, 0x08, 0);
-	I2CWrite(0x18, 0x0b, 0x82); /* Power up the NDAC divider with value 2 */
-	I2CWrite(0x18, 0x0c, 0x8d); /* Power up the MDAC divider with value 13 */
 #endif
 	I2CWrite(0x18, 0x0d, 0x00); /* Program the OSR of DAC to 128 */
 	I2CWrite(0x18, 0x0e, 0x80);
@@ -345,12 +347,13 @@ static void i2s_init(uint32_t rate)
     scu_pinmux(0x3, 1, MD_PLN_FAST, FUNC0);     // WS
     scu_pinmux(0x3, 2, MD_PLN_FAST, FUNC0);     // SD
 
+#if 0//EXTCLK_10MHZ
+	// supply GPCLK_IN:40MHz as MCLK
+    LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_GP_CLKIN << 24;
+#else
 	// for MCLK output XTAL_OSC(12MHz) to TP_CLK0
-#if 1
 	LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_XTAL_OSC << 24;
 	//LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_PLL0_AUDIO << 24;
-#else
-    LPC_CGU->BASE_OUT_CLK = CGU_CLKSRC_GP_CLKIN << 24;
 #endif
 	LPC_SCU->SFSCLK_0 = 0x1;
 
@@ -412,7 +415,9 @@ int main(void) {
     ui_init();
 	dsp_init();
 
+	//generate_test_tone((float)AUDIO_RATE/48);
 	i2s_init(AUDIO_RATE);
+	//i2s_init(48000);
 
 	VADC_Start();
 
