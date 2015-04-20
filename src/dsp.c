@@ -843,10 +843,10 @@ void resample_fir_filter_stereo()
 		// deemphasis with time constant
 		val1 = (float)acc1 * resample_state.deemphasis_rest + val1 * resample_state.deemphasis_mult;
 		val2 = (float)acc2 * resample_state.deemphasis_rest + val2 * resample_state.deemphasis_mult;
-		//dest[cur++] = __SSAT((int32_t)(val1+val2) >> (16 - RESAMPLE_GAINBITS), 16);
-		//dest[cur++] = __SSAT((int32_t)(val1-val2) >> (16 - RESAMPLE_GAINBITS), 16);
-		dest[cur++] = __SSAT((int32_t)(val1) >> (16 - RESAMPLE_GAINBITS), 16);
-		dest[cur++] = __SSAT((int32_t)(val1) >> (16 - RESAMPLE_GAINBITS), 16);
+		dest[cur++] = __SSAT((int32_t)(val1+val2) >> (16 - RESAMPLE_GAINBITS), 16);
+		dest[cur++] = __SSAT((int32_t)(val1-val2) >> (16 - RESAMPLE_GAINBITS), 16);
+		//dest[cur++] = __SSAT((int32_t)(val1) >> (16 - RESAMPLE_GAINBITS), 16);
+		//dest[cur++] = __SSAT((int32_t)(val1) >> (16 - RESAMPLE_GAINBITS), 16);
 		//dest[cur++] = 0;
 		cur %= AUDIO_BUFFER_SIZE / 2;
 		audio_state.write_total += 2;
