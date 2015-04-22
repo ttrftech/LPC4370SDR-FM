@@ -617,11 +617,13 @@ void stereo_separate()
 		stereo_separate_state.step_cos = step_cos;
 		stereo_separate_state.step_sin = step_sin;
 #else
-		phase_step = stereo_separate_state.phase_step_default - corr*30;
+		phase_step = stereo_separate_state.phase_step_default - corr*15;
+		//phase_step = stereo_separate_state.phase_step_default - corr*30;
+		//phase_step = stereo_separate_state.phase_step_default - corr*124;
 		//phase_step -= corr/10;
-		if (phase_step > stereo_separate_state.phase_step_default + 10000000
-		 || phase_step < stereo_separate_state.phase_step_default - 10000000)
-			phase_step = stereo_separate_state.phase_step_default;
+		//if (phase_step > stereo_separate_state.phase_step_default + 10000000
+		// || phase_step < stereo_separate_state.phase_step_default - 10000000)
+		//	phase_step = stereo_separate_state.phase_step_default;
 		stereo_separate_state.phase_step = phase_step;
 		stereo_separate_state.phase_accum = phase_accum;
 
