@@ -270,10 +270,10 @@ ui_update()
 			break;
 #else
 		case 11:
-			sprintf(buf, "SDI:%d", stereo_separate_state.sdi);
+			sprintf(buf, "SI%d", stereo_separate_state.sdi);
 			break;
 		case 12:
-			sprintf(buf, "SDQ:%d", stereo_separate_state.sdq);
+			sprintf(buf, "SQ%d", stereo_separate_state.sdq);
 			break;
 #endif
 		case 13:

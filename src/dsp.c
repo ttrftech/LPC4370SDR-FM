@@ -845,8 +845,11 @@ void resample_fir_filter_stereo()
 		// deemphasis with time constant
 		val1 = (float)acc1 * resample_state.deemphasis_rest + val1 * resample_state.deemphasis_mult;
 		val2 = (float)acc2 * resample_state.deemphasis_rest + val2 * resample_state.deemphasis_mult;
-		dest[cur++] = __SSAT((int32_t)(val1+val2) >> (16 - RESAMPLE_GAINBITS), 16);
-		dest[cur++] = __SSAT((int32_t)(val1-val2) >> (16 - RESAMPLE_GAINBITS), 16);
+		int32_t left = val1 + val2;
+		int32_t right = val1 - val2;
+		dest[cur++] = left >> (16 - RESAMPLE_GAINBITS);
+		dest[cur++] = right >> (16 - RESAMPLE_GAINBITS);
+		//dest[cur++] = __SSAT((int32_t)(val1-val2) >> (16 - RESAMPLE_GAINBITS), 16);
 		//dest[cur++] = __SSAT((int32_t)(val1) >> (16 - RESAMPLE_GAINBITS), 16);
 		//dest[cur++] = __SSAT((int32_t)(val1) >> (16 - RESAMPLE_GAINBITS), 16);
 		//dest[cur++] = 0;
