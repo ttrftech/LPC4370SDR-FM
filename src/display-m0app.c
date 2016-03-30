@@ -26,6 +26,8 @@
 #include "lpc43xx_ssp.h"
 #include <lpc43xx_gpdma.h>
 
+#include "receiver.h"
+
 extern uint32_t CGU_ClockSourceFrequency[CGU_CLKSRC_NUM];
 
 
@@ -666,6 +668,127 @@ int btn_check()
 	return status;
 }
 
+// result is 8.8 format
+static inline uint16_t
+log2_q31(uint32_t x)
+{
+	uint32_t mask = 0xffff0000;
+	uint16_t bit = 16;
+	uint16_t y = 31-15;
+	uint8_t i;
+
+	if (x == 0)
+		return 0;
+	// 16
+	if ((x & mask) == 0) {
+		x <<= bit;
+		y -= bit;
+	}
+	bit >>= 1;
+	mask <<= bit;
+	// 8
+	if ((x & mask) == 0) {
+		x <<= bit;
+		y -= bit;
+	}
+	bit >>= 1;
+	mask <<= bit;
+	// 4
+	if ((x & mask) == 0) {
+		x <<= bit;
+		y -= bit;
+	}
+	bit >>= 1;
+	mask <<= bit;
+	// 2
+	if ((x & mask) == 0) {
+		x <<= bit;
+		y -= bit;
+	}
+	bit >>= 1;
+	mask <<= bit;
+	// 1
+	if ((x & mask) == 0) {
+		x <<= bit;
+		y -= bit;
+	}
+	// msb should be 1. take next 8 bits.
+	i = (x >> 23) & 0xff;
+	// lookup logarythm table
+	return (y << 8) | i;
+}
+
+void draw_samples()
+{
+	int sx = 0, ex = 320;
+	int sy = 180, ey = 208;
+	uint8_t xx[4] = { sx >> 8, sx, ex >> 8, ex };
+	uint8_t yy[4] = { sy >> 8, sy, ey >> 8, ey };
+	ssp_databit8();
+	send_command(0x2A, 4, xx);
+	send_command(0x2B, 4, yy);
+	send_command(0x2C, 0, NULL);
+	ssp_databit16();
+	spi_dma_transfer(ANALYZEINFO->buffer, ANALYZE_BUFFER_SIZE/sizeof(uint16_t));
+	spi_dma_sync();
+}
+
+void
+draw_block_32x32(int x, int y, uint16_t *buf)
+{
+	int ex = x + 32-1;
+	int ey = y + 32-1;
+	uint8_t xx[4] = { x >> 8, x, ex >> 8, ex };
+	uint8_t yy[4] = { y >> 8, y, ey >> 8, ey };
+	ssp_databit8();
+	send_command(0x2A, 4, xx);
+	send_command(0x2B, 4, yy);
+	send_command(0x2C, 0, NULL);
+	ssp_databit16();
+	spi_dma_transfer(buf, 32*32);
+	spi_dma_sync();
+}
+
+arm_cfft_radix4_instance_q31 cfft_inst;
+
+void
+show_spectrogram()
+{
+	q31_t *buf = ANALYZEINFO->buffer;
+	arm_cfft_radix4_q31(&cfft_inst, buf);
+	arm_cmplx_mag_q31(buf, buf, 1024);
+	draw_samples();
+	//return;
+	q31_t *p = buf;
+	//int i = 511;
+	//int stride = -1;
+	int i = 512;
+	int stride = -1;
+	uint16_t (*block)[32] = spi_buffer;
+	int sx, x, y;
+	for (sx = 0; sx < 320; sx += 32) {
+		for (x = 0; x < 32; x++) {
+			int v = log2_q31(p[i]) >> 8;
+			for (y = 0; y < 32; y++)
+				block[31-y][x] = v < y ? 0 : 0xffff;
+			i += stride;
+		}
+		draw_block_32x32(sx, 208, block);
+	}
+}
+
+volatile int count;
+
+// event handler sent from M4 core
+void M0_M4CORE_IRQHandler(void) {
+	LPC_CREG->M4TXEVENT = 0;
+	ili9341_drawfont_dma(count++ % 10, &NF32x48, 0, 140, 0xffff, 0x0000);
+	if (ANALYZEINFO->semaphoe) {
+		show_spectrogram();
+		ANALYZEINFO->semaphoe = 0;
+	}
+}
+
 volatile int8_t pending_launch = 0;
 
 int main(void) {
@@ -685,6 +808,8 @@ int main(void) {
     RITConfig();
 
 	systick_delay(1000);
+
+	arm_cfft_radix4_init_q31(&cfft_inst, 1024, FALSE, TRUE);
 
     //RGU_SoftReset(RGU_SIG_I2C0);
 
@@ -708,12 +833,17 @@ int main(void) {
 		ili9341_drawfont_dma(i, &NF32x48, i*32, 44, 0xffff, 0x0000);
 	for (i = 0; i < 5; i++)
 		ili9341_drawfont_dma(i+5, &NF32x48, i*32, 92, 0xffff, 0x0000);
+
+    NVIC_SetPriority(M0_M4CORE_IRQn, 4);
+    NVIC_EnableIRQ(M0_M4CORE_IRQn);
+#if 0
 	while (1) {
 		for (i = 0; i < 10; i++) {
 			ili9341_drawfont_dma(i, &NF32x48, 0, 140, 0xffff, 0x0000);
 			systick_delay(200);
 		}
 	}
+#endif
 #endif
 #if 0
 
