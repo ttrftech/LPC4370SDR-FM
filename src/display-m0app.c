@@ -674,7 +674,7 @@ log2_q31(uint32_t x)
 {
 	uint32_t mask = 0xffff0000;
 	uint16_t bit = 16;
-	uint16_t y = 31-15;
+	uint16_t y = 32;//-15;
 	uint8_t i;
 
 	if (x == 0)
@@ -734,10 +734,10 @@ void draw_samples()
 }
 
 void
-draw_block_32x32(int x, int y, uint16_t *buf)
+draw_block_32x64(int x, int y, uint16_t *buf)
 {
 	int ex = x + 32-1;
-	int ey = y + 32-1;
+	int ey = y + 64-1;
 	uint8_t xx[4] = { x >> 8, x, ex >> 8, ex };
 	uint8_t yy[4] = { y >> 8, y, ey >> 8, ey };
 	ssp_databit8();
@@ -745,35 +745,41 @@ draw_block_32x32(int x, int y, uint16_t *buf)
 	send_command(0x2B, 4, yy);
 	send_command(0x2C, 0, NULL);
 	ssp_databit16();
-	spi_dma_transfer(buf, 32*32);
+	spi_dma_transfer(buf, 32*64);
 	spi_dma_sync();
 }
 
 arm_cfft_radix4_instance_q31 cfft_inst;
+
+//#define mag(r,i) (q31_t)(((q63_t)r*r)>>33)+(q31_t)(((q63_t)i*i)>>33)
 
 void
 show_spectrogram()
 {
 	q31_t *buf = ANALYZEINFO->buffer;
 	arm_cfft_radix4_q31(&cfft_inst, buf);
-	arm_cmplx_mag_q31(buf, buf, 1024);
-	draw_samples();
+	//arm_cmplx_mag_q31(buf, buf, 1024);
+	arm_cmplx_mag_squared_q31(buf, buf, 1024);
+	//draw_samples();
 	//return;
-	q31_t *p = buf;
-	//int i = 511;
-	//int stride = -1;
-	int i = 512;
-	int stride = -1;
+	int i = ANALYZEINFO->offset;
+	int stride = ANALYZEINFO->stride;
 	uint16_t (*block)[32] = spi_buffer;
 	int sx, x, y;
 	for (sx = 0; sx < 320; sx += 32) {
 		for (x = 0; x < 32; x++) {
-			int v = log2_q31(p[i]) >> 8;
-			for (y = 0; y < 32; y++)
-				block[31-y][x] = v < y ? 0 : 0xffff;
+			//q31_t ii = buf[i*2];
+			//q31_t qq = buf[i*2+1];
+			int v = log2_q31(buf[i & 1023]) >> 6;
+	//v = v>32 ? (v - 32) : 0;
+			if (v > 64) v = 64;
+			for (y = 0; y < v; y++)
+				block[63-y][x] = 0xffff;
+			for ( ; y < 64; y++)
+				block[63-y][x] = 0;
 			i += stride;
 		}
-		draw_block_32x32(sx, 208, block);
+		draw_block_32x64(sx, 72, block);
 	}
 }
 
@@ -782,7 +788,7 @@ volatile int count;
 // event handler sent from M4 core
 void M0_M4CORE_IRQHandler(void) {
 	LPC_CREG->M4TXEVENT = 0;
-	ili9341_drawfont_dma(count++ % 10, &NF32x48, 0, 140, 0xffff, 0x0000);
+	ili9341_drawfont_dma(count++ % 10, &NF32x48, 192, 0, 0xffC0, 0x0000);
 	if (ANALYZEINFO->semaphoe) {
 		show_spectrogram();
 		ANALYZEINFO->semaphoe = 0;
@@ -828,11 +834,11 @@ int main(void) {
 	//ili9341_bulk_test();
 	//ili9341_drawstring_dma("Hello", 100, 100, 0xffff, 0x0000);
 	for (i = 0; i < 10; i++)
-		ili9341_drawfont_dma(i, &NF20x24, i*20, 20, 0xffe0, 0x0000);
+		ili9341_drawfont_dma(i, &NF20x24, i*20, 48, 0xffe0, 0x0000);
 	for (i = 0; i < 5; i++)
-		ili9341_drawfont_dma(i, &NF32x48, i*32, 44, 0xffff, 0x0000);
-	for (i = 0; i < 5; i++)
-		ili9341_drawfont_dma(i+5, &NF32x48, i*32, 92, 0xffff, 0x0000);
+		ili9341_drawfont_dma(i, &NF32x48, i*32, 0, 0xffff, 0x0000);
+	//for (i = 0; i < 5; i++)
+	//	ili9341_drawfont_dma(i+5, &NF32x48, i*32, 92, 0xffff, 0x0000);
 
     NVIC_SetPriority(M0_M4CORE_IRQn, 4);
     NVIC_EnableIRQ(M0_M4CORE_IRQn);
