@@ -81,8 +81,8 @@ void systick_delay(uint32_t delayTicks) {
 #define CS_HIGH			//GPIO_SetValue(0, 1<<15)
 #define DC_CMD			GPIO_ClearValue(1, 1<<11)
 #define DC_DATA			GPIO_SetValue(1, 1<<11)
-#define LED_ON			GPIO_SetValue(3, 1<<5)
-#define LED_OFF			GPIO_ClearValue(3, 1<<5)
+#define BACKLIGHT_ON	GPIO_SetValue(3, 1<<5)
+#define BACKLIGHT_OFF	GPIO_ClearValue(3, 1<<5)
 
 void
 ssp_senddata(int x)
@@ -256,7 +256,7 @@ ili9341_init()
 
 	systick_delay(100);
 	send_command(0x29, 0, NULL); // display on
-	LED_ON;
+	BACKLIGHT_ON;
 }
 
 void ili9341_pixel(int x, int y, int color)
@@ -542,70 +542,6 @@ ili9341_bulk_test()
 	//}
 }
 
-static Status i2clcd_data(uint8_t data)
-{
-	I2C_M_SETUP_Type setup;
-    uint8_t buf[2];
-    buf[0] = 0x40;
-    buf[1] = data;
-    setup.sl_addr7bit = 0x7c >> 1;
-    setup.tx_data = buf;
-    setup.tx_length = 2;
-    setup.rx_data = NULL;
-    setup.rx_length = 0;
-    setup.retransmissions_max = 3;
-    return I2C_MasterTransferData(LPC_I2C0, &setup, I2C_TRANSFER_POLLING);
-}
-
-static void i2clcd_str(char *p)
-{
-	while (*p) {
-		i2clcd_data(*p++);
-	}
-}
-
-static Status i2clcd_cmd(uint8_t cmd)
-{
-	I2C_M_SETUP_Type setup;
-	Status s;
-    uint8_t buf[2];
-    buf[0] = 0;
-    buf[1] = cmd;
-    setup.sl_addr7bit = 0x7c >> 1;
-    setup.tx_data = buf;
-    setup.tx_length = 2;
-    setup.rx_data = NULL;
-    setup.rx_length = 0;
-    setup.retransmissions_max = 3;
-    s = I2C_MasterTransferData(LPC_I2C0, &setup, I2C_TRANSFER_POLLING);
-    if (s != SUCCESS) {
-    	//printf("I2C Failed\n");
-    }
-    return s;
-}
-
-static void i2clcd_pos(uint8_t x, uint8_t y)
-{
-	i2clcd_cmd(0x80 | (0x40 * y) | x);
-}
-
-void i2clcd_init()
-{
-    I2C_Init(LPC_I2C0, 10000);
-    I2C_Cmd(LPC_I2C0, ENABLE);
-    systick_delay(40);
-    i2clcd_cmd(0x38);
-    i2clcd_cmd(0x39);
-    i2clcd_cmd(0x14);
-    i2clcd_cmd(0x70);
-    i2clcd_cmd(0x56);
-    i2clcd_cmd(0x6c);
-    systick_delay(200);
-    i2clcd_cmd(0x38);
-    i2clcd_cmd(0x0c);
-    i2clcd_cmd(0x01);
-    systick_delay(2);
-}
 
 #define NO_EVENT					0
 #define EVT_BUTTON_SINGLE_CLICK		0x01
@@ -729,7 +665,7 @@ void draw_samples()
 	send_command(0x2B, 4, yy);
 	send_command(0x2C, 0, NULL);
 	ssp_databit16();
-	spi_dma_transfer(ANALYZEINFO->buffer, ANALYZE_BUFFER_SIZE/sizeof(uint16_t));
+	spi_dma_transfer(SPDISPINFO->buffer, SPDISP_BUFFER_SIZE/sizeof(uint16_t));
 	spi_dma_sync();
 }
 
@@ -756,16 +692,16 @@ arm_cfft_radix4_instance_q31 cfft_inst;
 void
 show_spectrogram()
 {
-	q31_t *buf = ANALYZEINFO->buffer;
+	q31_t *buf = SPDISPINFO->buffer;
 	arm_cfft_radix4_q31(&cfft_inst, buf);
 	//arm_cmplx_mag_q31(buf, buf, 1024);
 //	arm_cmplx_mag_squared_q31(buf, buf, 1024);
 	//draw_samples();
 	//return;
-	uint16_t gainshift = ANALYZEINFO->overgain;
-	int i = ANALYZEINFO->offset;
-	int stride = ANALYZEINFO->stride;
-	uint16_t (*block)[32] = spi_buffer;
+	uint16_t gainshift = SPDISPINFO->overgain;
+	int i = SPDISPINFO->offset;
+	int stride = SPDISPINFO->stride;
+	uint16_t (*block)[32] = (uint16_t (*)[32])spi_buffer;
 	int sx, x, y;
 	for (sx = 0; sx < 320; sx += 32) {
 		for (x = 0; x < 32; x++) {
@@ -781,7 +717,7 @@ show_spectrogram()
 				block[63-y][x] = 0;
 			i += stride;
 		}
-		draw_block_32x64(sx, 72, block);
+		draw_block_32x64(sx, 72, (uint16_t*)block);
 	}
 }
 
@@ -791,16 +727,16 @@ volatile int count;
 void M0_M4CORE_IRQHandler(void) {
 	LPC_CREG->M4TXEVENT = 0;
 	ili9341_drawfont_dma(count++ % 10, &NF32x48, 192, 0, 0xffC0, 0x0000);
-	if (ANALYZEINFO->semaphoe) {
+	if (SPDISPINFO->semaphoe) {
 		show_spectrogram();
-		ANALYZEINFO->semaphoe = 0;
+		SPDISPINFO->semaphoe = 0;
 	}
 }
 
 volatile int8_t pending_launch = 0;
 
 int main(void) {
-	char buf[16];
+	//char buf[16];
 	int i;
 
 	//while (pending_launch)
