@@ -542,68 +542,6 @@ ili9341_bulk_test()
 	//}
 }
 
-
-#define NO_EVENT					0
-#define EVT_BUTTON_SINGLE_CLICK		0x01
-#define EVT_BUTTON_DOUBLE_CLICK		0x02
-#define EVT_BUTTON_DOWN_LONG		0x04
-#define ENCODER_UP					0x10
-#define ENCODER_DOWN				0x20
-
-#define BUTTON_DOWN_LONG_TICKS		2000
-#define BUTTON_DOUBLE_TICKS			500
-#define BUTTON_DEBOUNCE_TICKS		10
-
-#define ENCODER0 0x01
-#define ENCODER1 0x02
-#define BUTTON0  0x04
-
-static uint8_t last_button = 0b111;
-static uint32_t last_button_down_ticks;
-
-int btn_check()
-{
-	int cur_button = GPIO_ReadValue(1) & 0b00000111;
-	int status = 0;
-	int changed = last_button ^ cur_button;
-	if (changed & BUTTON0) {
-		if (msTicks >= last_button_down_ticks + BUTTON_DEBOUNCE_TICKS) {
-			if (cur_button & BUTTON0) {
-				// button released
-				status |= EVT_BUTTON_SINGLE_CLICK;
-			} else {
-				// button pushed
-				if (msTicks < last_button_down_ticks + BUTTON_DOUBLE_TICKS) {
-					status |= EVT_BUTTON_DOUBLE_CLICK;
-				} else {
-					last_button_down_ticks = msTicks;
-				}
-			}
-		}
-	} else {
-		// button unchanged
-		if (!(cur_button & BUTTON0)
-			&& msTicks >= last_button_down_ticks + BUTTON_DOWN_LONG_TICKS) {
-			status |= EVT_BUTTON_DOWN_LONG;
-		}
-	}
-
-	if ((changed & ENCODER0) && !(cur_button & ENCODER0)) {
-		if (msTicks > last_button_down_ticks + 1) {
-			int e = cur_button & 0x03;
-			//printf("%d\n", e);
-			if (e == 0)
-				status |= ENCODER_UP;
-			else if (e == 2)
-				status |= ENCODER_DOWN;
-			last_button_down_ticks = msTicks;
-		}
-	}
-
-	last_button = cur_button;
-	return status;
-}
-
 // result is 8.8 format
 static inline uint16_t
 log2_q31(uint32_t x)
@@ -698,9 +636,9 @@ show_spectrogram()
 //	arm_cmplx_mag_squared_q31(buf, buf, 1024);
 	//draw_samples();
 	//return;
-	uint16_t gainshift = SPDISPINFO->overgain;
-	int i = SPDISPINFO->offset;
-	int stride = SPDISPINFO->stride;
+	uint16_t gainshift = SPDISPINFO->p.overgain;
+	int i = SPDISPINFO->p.offset;
+	int stride = SPDISPINFO->p.stride;
 	uint16_t (*block)[32] = (uint16_t (*)[32])spi_buffer;
 	int sx, x, y;
 	for (sx = 0; sx < 320; sx += 32) {
