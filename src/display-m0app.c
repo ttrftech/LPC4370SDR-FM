@@ -759,19 +759,21 @@ show_spectrogram()
 	q31_t *buf = ANALYZEINFO->buffer;
 	arm_cfft_radix4_q31(&cfft_inst, buf);
 	//arm_cmplx_mag_q31(buf, buf, 1024);
-	arm_cmplx_mag_squared_q31(buf, buf, 1024);
+//	arm_cmplx_mag_squared_q31(buf, buf, 1024);
 	//draw_samples();
 	//return;
+	uint16_t gainshift = ANALYZEINFO->overgain;
 	int i = ANALYZEINFO->offset;
 	int stride = ANALYZEINFO->stride;
 	uint16_t (*block)[32] = spi_buffer;
 	int sx, x, y;
 	for (sx = 0; sx < 320; sx += 32) {
 		for (x = 0; x < 32; x++) {
-			//q31_t ii = buf[i*2];
-			//q31_t qq = buf[i*2+1];
-			int v = log2_q31(buf[i & 1023]) >> 6;
-	//v = v>32 ? (v - 32) : 0;
+			q31_t ii = buf[(i&1023)*2];
+			q31_t qq = buf[(i&1023)*2+1];
+			q31_t mag = ((int64_t)ii*ii + (int64_t)qq*qq)>>(33-gainshift);
+			//q31_t mag = buf[i & 1023];
+			int v = log2_q31(mag) >> 6;
 			if (v > 64) v = 64;
 			for (y = 0; y < v; y++)
 				block[63-y][x] = 0xffff;
