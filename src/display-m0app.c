@@ -30,6 +30,10 @@
 
 extern uint32_t CGU_ClockSourceFrequency[CGU_CLKSRC_NUM];
 
+#define BG_ACTIVE 0x4210
+#define BG_NORMAL 0x0000
+
+
 
 volatile uint32_t msTicks; // counter for 1ms SysTicks
 
@@ -298,7 +302,7 @@ spi_dma_setup()
 }
 
 void
-spi_dma_transfer(void *data, int length)
+spi_dma_transfer(void *data, int length, int noincrement)
 {
 #if 0
 	GPDMA_Channel_CFG_Type ssp_dma_cfg;
@@ -322,19 +326,19 @@ spi_dma_transfer(void *data, int length)
 	LPC_GPDMA->C1SRCADDR = (uint32_t)data;
 	LPC_GPDMA->C1DESTADDR = (uint32_t)&LPC_SSP1->DR;
 	LPC_GPDMA->C1LLI = 0;
-	LPC_GPDMA->C1CONTROL = (length >> 1) |      // Transfersize (does not matter when flow control is handled by peripheral)
-                           (0x2 << 12)  |          // Source Burst Size
+	LPC_GPDMA->C1CONTROL = (length >> 1) |         // Transfersize (does not matter when flow control is handled by peripheral)
+						   (0x2 << 12)  |          // Source Burst Size
                            (0x0 << 15)  |          // Destination Burst Size
                            (0x2 << 18)  |          // Source width // 32 bit width
                            (0x1 << 21)  |          // Destination width   // 16 bits
                            (0x0 << 24)  |          // Source AHB master 0 / 1
                            (0x1 << 25)  |          // Dest AHB master 0 / 1
-                           (0x1 << 26)  |          // Source increment(LAST Sample)
+            (noincrement?0:(0x1 << 26)) |	 	   // Source increment(LAST Sample)
                            (0x0 << 27)  |          // Destination increment
                            (0x1UL << 31);          // Terminal count interrupt disabled
-	LPC_GPDMA->C1CONFIG  =  (0x1)        |          // Enable bit
-						  (0x0 << 1) |  // SRCPERIPHERAL - memory
-						  (GPDMA_SSP1_TX_CHANNEL << 6)   |          // Destination peripheral - memory - no setting
+	LPC_GPDMA->C1CONFIG  =  (0x1)       |          // Enable bit
+						  (0x0 << 1)    |  	       // SRCPERIPHERAL - memory
+		 (GPDMA_SSP1_TX_CHANNEL << 6)  |           // Destination peripheral - memory - no setting
 						  (0x1 << 11)  |          // Flow control - peripheral to memory - DMA control
 //                        (0x5 << 11)  |          // Flow control - peripheral to memory - peripheral control
 						  (0x0 << 14)  |          // Int error mask
@@ -400,7 +404,7 @@ ili9341_dma_test()
 			send_command(0x2B, 4, yy);
 			send_command(0x2C, 3, xx);
 			ssp_databit16();
-			spi_dma_transfer(spi_buffer, 160);
+			spi_dma_transfer(spi_buffer, 160, 0);
 			spi_dma_sync();
 		}
 		//systick_delay(10);
@@ -412,18 +416,21 @@ ili9341_dma_test()
 extern const UNS_16 x5x7_bits [];
 extern const uint32_t numfont20x24[][24];
 extern const uint32_t numfont32x24[][24];
+extern const uint32_t icons48x20[][20*2];
 
 typedef struct {
 	uint16_t width;
 	uint16_t height;
 	uint16_t scaley;
 	uint16_t slide;
+	uint16_t stride;
 	const uint32_t *bitmap;
 } font_t;
 
-const font_t NF20x24 = { 20, 24, 1, 24, (const uint32_t *)numfont20x24 };
-const font_t NF32x24 = { 32, 24, 1, 24, (const uint32_t *)numfont32x24 };
-const font_t NF32x48 = { 32, 48, 2, 24, (const uint32_t *)numfont32x24 };
+const font_t NF20x24 = { 20, 24, 1, 24, 1, (const uint32_t *)numfont20x24 };
+const font_t NF32x24 = { 32, 24, 1, 24, 1, (const uint32_t *)numfont32x24 };
+const font_t NF32x48 = { 32, 48, 2, 24, 1, (const uint32_t *)numfont32x24 };
+const font_t ICON48x20 = { 48, 20, 1, 40, 2, (const uint32_t *)icons48x20 };
 
 void
 ili9341_drawfont_dma(uint8_t ch, const font_t *font, int x, int y, uint16_t fg, uint16_t bg)
@@ -435,14 +442,17 @@ ili9341_drawfont_dma(uint8_t ch, const font_t *font, int x, int y, uint16_t fg, 
 	uint16_t *buf = spi_buffer;
 	uint32_t bits;
 	const uint32_t *bitmap = &font->bitmap[font->slide * ch];
-	int c, r, j;
+	int c, r, j, b;
 
-	for (c = 0; c < font->slide; c++) {
+	for (c = 0; c < font->slide; c += font->stride) {
 		for (j = 0; j < font->scaley; j++) {
-			bits = bitmap[c];
-			for (r = 0; r < font->width; r++) {
-				*buf++ = (0x80000000UL & bits) ? fg : bg;
-				bits <<= 1;
+			int cc = c;
+			for (r = 0; r < font->width;) {
+				bits = bitmap[cc++];
+				for (b = 0; b < 32 && r < font->width; b++,r++) {
+					*buf++ = (0x80000000UL & bits) ? fg : bg;
+					bits <<= 1;
+				}
 			}
 		}
 	}
@@ -453,7 +463,7 @@ ili9341_drawfont_dma(uint8_t ch, const font_t *font, int x, int y, uint16_t fg, 
 	ssp_databit16();
 	//spi_dma_transfer(spi_buffer, 4);
 	//spi_dma_sync();
-	spi_dma_transfer(spi_buffer, buf - spi_buffer);
+	spi_dma_transfer(spi_buffer, buf - spi_buffer, 0);
 	spi_dma_sync();
 }
 
@@ -480,14 +490,14 @@ ili9341_drawchar_dma(uint8_t ch, int x, int y, uint16_t fg, uint16_t bg)
 	send_command(0x2B, 4, yy);
 	send_command(0x2C, 0, NULL);
 	ssp_databit16();
-	spi_dma_transfer(spi_buffer, 35);
+	spi_dma_transfer(spi_buffer, 35, 0);
 	spi_dma_sync();
 }
 
 void
 ili9341_drawstring_dma(char *str, int x, int y, uint16_t fg, uint16_t bg)
 {
-	spi_dma_setup();
+	//spi_dma_setup();
 	while (*str) {
 		ili9341_drawchar_dma(*str, x, y, fg, bg);
 		x += 5;
@@ -603,15 +613,15 @@ void draw_samples()
 	send_command(0x2B, 4, yy);
 	send_command(0x2C, 0, NULL);
 	ssp_databit16();
-	spi_dma_transfer(SPDISPINFO->buffer, SPDISP_BUFFER_SIZE/sizeof(uint16_t));
+	spi_dma_transfer(SPDISPINFO->buffer, SPDISP_BUFFER_SIZE/sizeof(uint16_t), 0);
 	spi_dma_sync();
 }
 
 void
-draw_block_32x64(int x, int y, uint16_t *buf)
+draw_block(int x, int y, int w, int h, uint16_t *buf)
 {
-	int ex = x + 32-1;
-	int ey = y + 64-1;
+	int ex = x + w-1;
+	int ey = y + h-1;
 	uint8_t xx[4] = { x >> 8, x, ex >> 8, ex };
 	uint8_t yy[4] = { y >> 8, y, ey >> 8, ey };
 	ssp_databit8();
@@ -619,7 +629,24 @@ draw_block_32x64(int x, int y, uint16_t *buf)
 	send_command(0x2B, 4, yy);
 	send_command(0x2C, 0, NULL);
 	ssp_databit16();
-	spi_dma_transfer(buf, 32*64);
+	spi_dma_transfer(buf, w*h, 0);
+	spi_dma_sync();
+}
+
+void
+fill_block(int x, int y, int w, int h, uint16_t color)
+{
+	uint16_t buf[2] = { color, color }; //32bit buffer
+	int ex = x + w-1;
+	int ey = y + h-1;
+	uint8_t xx[4] = { x >> 8, x, ex >> 8, ex };
+	uint8_t yy[4] = { y >> 8, y, ey >> 8, ey };
+	ssp_databit8();
+	send_command(0x2A, 4, xx);
+	send_command(0x2B, 4, yy);
+	send_command(0x2C, 0, NULL);
+	ssp_databit16();
+	spi_dma_transfer(buf, w*h, 1);
 	spi_dma_sync();
 }
 
@@ -628,7 +655,7 @@ arm_cfft_radix4_instance_q31 cfft_inst;
 //#define mag(r,i) (q31_t)(((q63_t)r*r)>>33)+(q31_t)(((q63_t)i*i)>>33)
 
 void
-show_spectrogram()
+draw_spectrogram()
 {
 	q31_t *buf = SPDISPINFO->buffer;
 	arm_cfft_radix4_q31(&cfft_inst, buf);
@@ -655,27 +682,94 @@ show_spectrogram()
 				block[63-y][x] = 0;
 			i += stride;
 		}
-		draw_block_32x64(sx, 72, (uint16_t*)block);
+		draw_block(sx, 72, 32, 64, (uint16_t*)block);
 	}
 }
 
-volatile int count;
+void
+draw_tick(void)
+{
+	char str[10];
+	int x = SPDISPINFO->p.origin;
+	int base = SPDISPINFO->p.tickbase;
+	int xx;
+	uint16_t bg = UISTAT->mode == SPDISP ? BG_ACTIVE : BG_NORMAL;
+
+	fill_block(0, 136, 320, 16, bg);
+	sprintf(str, "%d%s", base, SPDISPINFO->p.unitname);
+	xx = x - strlen(str) * 5 / 2;
+	if (xx < 0) xx = 0;
+	ili9341_drawstring_dma(str, xx, 142, 0xffff, 0x0000);
+	fill_block(x, 136, 2, 5, 0xffff);
+
+	base += SPDISPINFO->p.tickunit;
+	x += SPDISPINFO->p.tickstep;
+	while (x < 320) {
+		sprintf(str, "%d", base);
+		fill_block(x, 136, 2, 5, 0xffff);
+		ili9341_drawstring_dma(str, x, 142, 0xffff, 0x0000);
+		base += SPDISPINFO->p.tickunit;
+		x += SPDISPINFO->p.tickstep;
+	}
+	x = SPDISPINFO->p.origin;
+	base = SPDISPINFO->p.tickbase;
+	base -= SPDISPINFO->p.tickunit;
+	x -= SPDISPINFO->p.tickstep;
+	while (x >= 0) {
+		sprintf(str, "%d", base);
+		fill_block(x, 136, 2, 5, 0xffff);
+		ili9341_drawstring_dma(str, x, 142, 0xffff, 0x0000);
+		base -= SPDISPINFO->p.tickunit;
+		x -= SPDISPINFO->p.tickstep;
+	}
+}
+
+void
+draw_freq(void)
+{
+	char str[10];
+	uint16_t bg = UISTAT->mode == FREQ ? BG_ACTIVE : BG_NORMAL;
+	int i;
+	sprintf(str, "%8d", UISTAT->freq);
+	for (i = 0; i < 8; i++) {
+		int8_t c = str[i] - '0';
+		uint16_t fg = 0xffff;
+		if (UISTAT->mode == FREQ && UISTAT->digit == 7-i)
+			fg = 0xfe40;
+		if (c >= 0 && c <= 9)
+			ili9341_drawfont_dma(c, &NF32x48, i*32, 0, fg, bg);
+		else
+			fill_block(i*32, 0, 32, 48, bg);
+	}
+}
+
+
+//volatile int count;
 
 // event handler sent from M4 core
 void M0_M4CORE_IRQHandler(void) {
 	LPC_CREG->M4TXEVENT = 0;
-	ili9341_drawfont_dma(count++ % 10, &NF32x48, 192, 0, 0xffC0, 0x0000);
-	if (SPDISPINFO->semaphoe) {
-		show_spectrogram();
-		SPDISPINFO->semaphoe = 0;
+	//ili9341_drawfont_dma(count++ % 10, &NF32x48, 192, 0, 0xffC0, 0x0000);
+
+	if (SPDISPINFO->update_flag & FLAG_SPDISP) {
+		draw_spectrogram();
+		SPDISPINFO->update_flag &= ~FLAG_SPDISP;
+	}
+	if (SPDISPINFO->update_flag & FLAG_TICK) {
+		draw_tick();
+		SPDISPINFO->update_flag &= ~FLAG_TICK;
+	}
+	if (SPDISPINFO->update_flag & FLAG_FREQ) {
+		draw_freq();
+		SPDISPINFO->update_flag &= ~FLAG_FREQ;
 	}
 }
 
-volatile int8_t pending_launch = 0;
+//volatile int8_t pending_launch = 0;
 
 int main(void) {
 	//char buf[16];
-	int i;
+	//int i;
 
 	//while (pending_launch)
 	//	;
@@ -702,9 +796,13 @@ int main(void) {
 	scu_pinmux(1, 9, GPIO_PUP, FUNC0); // GPIO1-2
 
 	spi_init();
-	//spi_test();
-#if 1
 	ili9341_init();
+	//spi_test();
+	ili9341_drawfont_dma(0, &ICON48x20, 0, 48, 0xffe0, 0x0000);		// LSB
+	ili9341_drawfont_dma(1, &ICON48x20, 48, 48, 0x07ff, 0x0000);	// USB
+	ili9341_drawfont_dma(2, &ICON48x20, 96, 48, 0xffff, 0x0000);	// OFF
+	ili9341_drawfont_dma(3, &ICON48x20, 144, 48, 0xffff, 0x0000);	// FAST
+#if 0
 	//ili9341_test();
 	//ili9341_dma_test();
 	//ili9341_bulk_test();
@@ -715,6 +813,7 @@ int main(void) {
 		ili9341_drawfont_dma(i, &NF32x48, i*32, 0, 0xffff, 0x0000);
 	//for (i = 0; i < 5; i++)
 	//	ili9341_drawfont_dma(i+5, &NF32x48, i*32, 92, 0xffff, 0x0000);
+#endif
 
     NVIC_SetPriority(M0_M4CORE_IRQn, 4);
     NVIC_EnableIRQ(M0_M4CORE_IRQn);
@@ -725,7 +824,6 @@ int main(void) {
 			systick_delay(200);
 		}
 	}
-#endif
 #endif
 #if 0
 
