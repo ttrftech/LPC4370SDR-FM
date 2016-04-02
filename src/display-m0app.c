@@ -468,6 +468,19 @@ ili9341_drawfont_dma(uint8_t ch, const font_t *font, int x, int y, uint16_t fg, 
 }
 
 void
+ili9341_drawfont_string(char *str, const font_t *font, int x, int y, uint16_t fg, uint16_t bg)
+{
+	while (*str) {
+		char c = *str++;
+		if (c >= '0' && c <= '9')
+			ili9341_drawfont_dma(c - '0', font, x, y, fg, bg);
+		else
+			fill_block(x, y, font->width, font->height, bg);
+		x += font->width;
+	}
+}
+
+void
 ili9341_drawchar_dma(uint8_t ch, int x, int y, uint16_t fg, uint16_t bg)
 {
 	int ex = x + 4;
@@ -743,6 +756,31 @@ draw_freq(void)
 	}
 }
 
+void
+draw_info(void)
+{
+	char str[10];
+	int x = 0;
+	int y = 48;
+	uint16_t bg = UISTAT->mode == GAIN ? BG_ACTIVE : BG_NORMAL;
+	sprintf(str, "%2d", UISTAT->gain);
+	ili9341_drawfont_string(str, &NF20x24, x, y, 0xfffe, bg);
+	x += 60;
+
+	bg = UISTAT->mode == MOD ? BG_ACTIVE : BG_NORMAL;
+	ili9341_drawfont_dma(UISTAT->modulation, &ICON48x20, x, y, 0xffe0, bg);
+	x += 48;
+
+	bg = UISTAT->mode == AGCMODE ? BG_ACTIVE : BG_NORMAL;
+	ili9341_drawfont_dma(UISTAT->agcmode + 2, &ICON48x20, x, y, 0xffff, bg);
+	x += 48;
+
+	bg = UISTAT->mode == RFGAIN ? BG_ACTIVE : BG_NORMAL;
+	sprintf(str, "%2d", -6 * (int32_t)UISTAT->rfgain);
+	ili9341_drawfont_string(str, &NF20x24, x, y, 0x07ff, bg);
+	x += 60;
+}
+
 
 //volatile int count;
 
@@ -761,6 +799,7 @@ void M0_M4CORE_IRQHandler(void) {
 	}
 	if (SPDISPINFO->update_flag & FLAG_FREQ) {
 		draw_freq();
+		draw_info();
 		SPDISPINFO->update_flag &= ~FLAG_FREQ;
 	}
 }
@@ -798,10 +837,14 @@ int main(void) {
 	spi_init();
 	ili9341_init();
 	//spi_test();
+#if 0
 	ili9341_drawfont_dma(0, &ICON48x20, 0, 48, 0xffe0, 0x0000);		// LSB
 	ili9341_drawfont_dma(1, &ICON48x20, 48, 48, 0x07ff, 0x0000);	// USB
 	ili9341_drawfont_dma(2, &ICON48x20, 96, 48, 0xffff, 0x0000);	// OFF
-	ili9341_drawfont_dma(3, &ICON48x20, 144, 48, 0xffff, 0x0000);	// FAST
+	ili9341_drawfont_dma(3, &ICON48x20, 48*3, 48, 0xffff, 0x0000);	// FAST
+	ili9341_drawfont_dma(4, &ICON48x20, 48*4, 48, 0xffff, 0x0000);	// SLOW
+	ili9341_drawfont_dma(5, &ICON48x20, 48*5, 48, 0xffff, 0x0000);	// MID
+#endif
 #if 0
 	//ili9341_test();
 	//ili9341_dma_test();
