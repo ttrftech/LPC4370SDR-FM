@@ -413,7 +413,7 @@ ili9341_dma_test()
 }
 
 void
-draw_block(int x, int y, int w, int h, uint16_t *buf)
+ili9341_draw_bitmap(int x, int y, int w, int h, uint16_t *buf)
 {
 	int ex = x + w-1;
 	int ey = y + h-1;
@@ -429,7 +429,7 @@ draw_block(int x, int y, int w, int h, uint16_t *buf)
 }
 
 void
-fill_block(int x, int y, int w, int h, uint16_t color)
+ili9341_fill(int x, int y, int w, int h, uint16_t color)
 {
 	uint16_t buf[2] = { color, color }; //32bit buffer
 	int ex = x + w-1;
@@ -513,7 +513,7 @@ ili9341_drawfont_string(char *str, const font_t *font, int x, int y, uint16_t fg
 		else if (c == '-')
 			ili9341_drawfont_dma(11, font, x, y, fg, bg);
 		else
-			fill_block(x, y, font->width, font->height, bg);
+			ili9341_fill(x, y, font->width, font->height, bg);
 		x += font->width;
 	}
 }
@@ -653,23 +653,6 @@ log2_q31(uint32_t x)
 	return (y << 8) | i;
 }
 
-void draw_samples()
-{
-	int sx = 0, ex = 320;
-	int sy = 180, ey = 208;
-	uint8_t xx[4] = { sx >> 8, sx, ex >> 8, ex };
-	uint8_t yy[4] = { sy >> 8, sy, ey >> 8, ey };
-	ssp_databit8();
-	send_command(0x2A, 4, xx);
-	send_command(0x2B, 4, yy);
-	send_command(0x2C, 0, NULL);
-	ssp_databit16();
-	spi_dma_transfer(SPDISPINFO->buffer, SPDISP_BUFFER_SIZE/sizeof(uint16_t), 0);
-	spi_dma_sync();
-}
-
-
-
 arm_cfft_radix4_instance_q31 cfft_inst;
 
 //#define mag(r,i) (q31_t)(((q63_t)r*r)>>33)+(q31_t)(((q63_t)i*i)>>33)
@@ -702,7 +685,7 @@ draw_spectrogram()
 				block[63-y][x] = 0;
 			i += stride;
 		}
-		draw_block(sx, 72, 32, 64, (uint16_t*)block);
+		ili9341_draw_bitmap(sx, 72, 32, 64, (uint16_t*)block);
 	}
 }
 
@@ -715,18 +698,18 @@ draw_tick(void)
 	int xx;
 	uint16_t bg = UISTAT->mode == SPDISP ? BG_ACTIVE : BG_NORMAL;
 
-	fill_block(0, 136, 320, 16, bg);
+	ili9341_fill(0, 136, 320, 16, bg);
 	sprintf(str, "%d%s", base, SPDISPINFO->p.unitname);
 	xx = x - strlen(str) * 5 / 2;
 	if (xx < 0) xx = 0;
 	ili9341_drawstring_dma(str, xx, 142, 0xffff, bg);
-	fill_block(x, 136, 2, 5, 0xffff);
+	ili9341_fill(x, 136, 2, 5, 0xffff);
 
 	base += SPDISPINFO->p.tickunit;
 	x += SPDISPINFO->p.tickstep;
 	while (x < 320) {
 		sprintf(str, "%d", base);
-		fill_block(x, 136, 2, 5, 0xffff);
+		ili9341_fill(x, 136, 2, 5, 0xffff);
 		ili9341_drawstring_dma(str, x, 142, 0xffff, bg);
 		base += SPDISPINFO->p.tickunit;
 		x += SPDISPINFO->p.tickstep;
@@ -737,7 +720,7 @@ draw_tick(void)
 	x -= SPDISPINFO->p.tickstep;
 	while (x >= 0) {
 		sprintf(str, "%d", base);
-		fill_block(x, 136, 2, 5, 0xffff);
+		ili9341_fill(x, 136, 2, 5, 0xffff);
 		ili9341_drawstring_dma(str, x, 142, 0xffff, bg);
 		base -= SPDISPINFO->p.tickunit;
 		x -= SPDISPINFO->p.tickstep;
@@ -762,8 +745,14 @@ draw_freq(void)
 		if (c >= 0 && c <= 9)
 			ili9341_drawfont_dma(c, &NF32x48, x, 0, fg, bg);
 		else
-			fill_block(x, 0, 32, 48, bg);
-		x += 32 + xsim[i];
+			ili9341_fill(x, 0, 32, 48, bg);
+		x += 32;
+
+		// fill gaps
+		if (xsim[i] > 0) {
+			ili9341_fill(x, 0, xsim[i], 48, bg);
+			x += xsim[i];
+		}
 	}
 	// draw Hz symbol
 	ili9341_drawfont_dma(10, &NF32x48, x, 0, 0xffff, bg);
@@ -804,6 +793,15 @@ draw_info(void)
 	x += 60;
 	ili9341_drawfont_dma(13, &NF20x24, x, y, 0x07ff, bg);
 	x += 20;
+}
+
+void
+clear_background(void)
+{
+	int i = 0;
+	for (i = 0; i < 12; i++) {
+		ili9341_fill(0, i*10, 320, 10, 0x0000);
+	}
 }
 
 
@@ -861,6 +859,8 @@ int main(void) {
 
 	spi_init();
 	ili9341_init();
+	clear_background();
+
 	//spi_test();
 #if 0
 	ili9341_drawfont_dma(0, &ICON48x20, 0, 48, 0xffe0, 0x0000);		// LSB
