@@ -30,7 +30,7 @@
 
 extern uint32_t CGU_ClockSourceFrequency[CGU_CLKSRC_NUM];
 
-#define BG_ACTIVE 0x4210
+#define BG_ACTIVE 0x8208
 #define BG_NORMAL 0x0000
 
 
@@ -412,6 +412,38 @@ ili9341_dma_test()
 	//spi_dma_stop();
 }
 
+void
+draw_block(int x, int y, int w, int h, uint16_t *buf)
+{
+	int ex = x + w-1;
+	int ey = y + h-1;
+	uint8_t xx[4] = { x >> 8, x, ex >> 8, ex };
+	uint8_t yy[4] = { y >> 8, y, ey >> 8, ey };
+	ssp_databit8();
+	send_command(0x2A, 4, xx);
+	send_command(0x2B, 4, yy);
+	send_command(0x2C, 0, NULL);
+	ssp_databit16();
+	spi_dma_transfer(buf, w*h, 0);
+	spi_dma_sync();
+}
+
+void
+fill_block(int x, int y, int w, int h, uint16_t color)
+{
+	uint16_t buf[2] = { color, color }; //32bit buffer
+	int ex = x + w-1;
+	int ey = y + h-1;
+	uint8_t xx[4] = { x >> 8, x, ex >> 8, ex };
+	uint8_t yy[4] = { y >> 8, y, ey >> 8, ey };
+	ssp_databit8();
+	send_command(0x2A, 4, xx);
+	send_command(0x2B, 4, yy);
+	send_command(0x2C, 0, NULL);
+	ssp_databit16();
+	spi_dma_transfer(buf, w*h, 1);
+	spi_dma_sync();
+}
 
 extern const UNS_16 x5x7_bits [];
 extern const uint32_t numfont20x24[][24];
@@ -474,6 +506,12 @@ ili9341_drawfont_string(char *str, const font_t *font, int x, int y, uint16_t fg
 		char c = *str++;
 		if (c >= '0' && c <= '9')
 			ili9341_drawfont_dma(c - '0', font, x, y, fg, bg);
+		else if (c > 0 && c < 7)
+			ili9341_drawfont_dma(c + 9, font, x, y, fg, bg);
+		else if (c == '.')
+			ili9341_drawfont_dma(10, font, x, y, fg, bg);
+		else if (c == '-')
+			ili9341_drawfont_dma(11, font, x, y, fg, bg);
 		else
 			fill_block(x, y, font->width, font->height, bg);
 		x += font->width;
@@ -630,38 +668,7 @@ void draw_samples()
 	spi_dma_sync();
 }
 
-void
-draw_block(int x, int y, int w, int h, uint16_t *buf)
-{
-	int ex = x + w-1;
-	int ey = y + h-1;
-	uint8_t xx[4] = { x >> 8, x, ex >> 8, ex };
-	uint8_t yy[4] = { y >> 8, y, ey >> 8, ey };
-	ssp_databit8();
-	send_command(0x2A, 4, xx);
-	send_command(0x2B, 4, yy);
-	send_command(0x2C, 0, NULL);
-	ssp_databit16();
-	spi_dma_transfer(buf, w*h, 0);
-	spi_dma_sync();
-}
 
-void
-fill_block(int x, int y, int w, int h, uint16_t color)
-{
-	uint16_t buf[2] = { color, color }; //32bit buffer
-	int ex = x + w-1;
-	int ey = y + h-1;
-	uint8_t xx[4] = { x >> 8, x, ex >> 8, ex };
-	uint8_t yy[4] = { y >> 8, y, ey >> 8, ey };
-	ssp_databit8();
-	send_command(0x2A, 4, xx);
-	send_command(0x2B, 4, yy);
-	send_command(0x2C, 0, NULL);
-	ssp_databit16();
-	spi_dma_transfer(buf, w*h, 1);
-	spi_dma_sync();
-}
 
 arm_cfft_radix4_instance_q31 cfft_inst;
 
@@ -712,7 +719,7 @@ draw_tick(void)
 	sprintf(str, "%d%s", base, SPDISPINFO->p.unitname);
 	xx = x - strlen(str) * 5 / 2;
 	if (xx < 0) xx = 0;
-	ili9341_drawstring_dma(str, xx, 142, 0xffff, 0x0000);
+	ili9341_drawstring_dma(str, xx, 142, 0xffff, bg);
 	fill_block(x, 136, 2, 5, 0xffff);
 
 	base += SPDISPINFO->p.tickunit;
@@ -720,7 +727,7 @@ draw_tick(void)
 	while (x < 320) {
 		sprintf(str, "%d", base);
 		fill_block(x, 136, 2, 5, 0xffff);
-		ili9341_drawstring_dma(str, x, 142, 0xffff, 0x0000);
+		ili9341_drawstring_dma(str, x, 142, 0xffff, bg);
 		base += SPDISPINFO->p.tickunit;
 		x += SPDISPINFO->p.tickstep;
 	}
@@ -731,7 +738,7 @@ draw_tick(void)
 	while (x >= 0) {
 		sprintf(str, "%d", base);
 		fill_block(x, 136, 2, 5, 0xffff);
-		ili9341_drawstring_dma(str, x, 142, 0xffff, 0x0000);
+		ili9341_drawstring_dma(str, x, 142, 0xffff, bg);
 		base -= SPDISPINFO->p.tickunit;
 		x -= SPDISPINFO->p.tickstep;
 	}
@@ -743,17 +750,23 @@ draw_freq(void)
 	char str[10];
 	uint16_t bg = UISTAT->mode == FREQ ? BG_ACTIVE : BG_NORMAL;
 	int i;
+	const uint16_t xsim[] = { 0, 16, 0, 0, 16, 0, 0, 0 };
+	uint16_t x = 0;
 	sprintf(str, "%8d", UISTAT->freq);
 	for (i = 0; i < 8; i++) {
 		int8_t c = str[i] - '0';
 		uint16_t fg = 0xffff;
 		if (UISTAT->mode == FREQ && UISTAT->digit == 7-i)
 			fg = 0xfe40;
+
 		if (c >= 0 && c <= 9)
-			ili9341_drawfont_dma(c, &NF32x48, i*32, 0, fg, bg);
+			ili9341_drawfont_dma(c, &NF32x48, x, 0, fg, bg);
 		else
-			fill_block(i*32, 0, 32, 48, bg);
+			fill_block(x, 0, 32, 48, bg);
+		x += 32 + xsim[i];
 	}
+	// draw Hz symbol
+	ili9341_drawfont_dma(10, &NF32x48, x, 0, 0xffff, bg);
 }
 
 void
@@ -763,22 +776,34 @@ draw_info(void)
 	int x = 0;
 	int y = 48;
 	uint16_t bg = UISTAT->mode == GAIN ? BG_ACTIVE : BG_NORMAL;
-	sprintf(str, "%2d", UISTAT->gain);
+	ili9341_drawfont_dma(14, &NF20x24, x, y, 0xfffe, bg);
+	x += 20;
+	if (UISTAT->gain != -7)
+		sprintf(str, "%2d", UISTAT->gain);
+	else
+		// -infinity
+		sprintf(str, "-\003", UISTAT->gain);
 	ili9341_drawfont_string(str, &NF20x24, x, y, 0xfffe, bg);
-	x += 60;
+	x += 40;
+	ili9341_drawfont_dma(13, &NF20x24, x, y, 0xfffe, bg);
+	x += 20;
 
 	bg = UISTAT->mode == MOD ? BG_ACTIVE : BG_NORMAL;
-	ili9341_drawfont_dma(UISTAT->modulation, &ICON48x20, x, y, 0xffe0, bg);
-	x += 48;
+	ili9341_drawfont_dma(UISTAT->modulation, &ICON48x20, x+2, y+2, 0xffe0, bg);
+	x += 48+4;
 
 	bg = UISTAT->mode == AGCMODE ? BG_ACTIVE : BG_NORMAL;
-	ili9341_drawfont_dma(UISTAT->agcmode + 2, &ICON48x20, x, y, 0xffff, bg);
-	x += 48;
+	ili9341_drawfont_dma(UISTAT->agcmode + 2, &ICON48x20, x+2, y+2, 0xffff, bg);
+	x += 48+4;
 
 	bg = UISTAT->mode == RFGAIN ? BG_ACTIVE : BG_NORMAL;
-	sprintf(str, "%2d", -6 * (int32_t)UISTAT->rfgain);
+	ili9341_drawfont_dma(15, &NF20x24, x, y, 0x07ff, bg);
+	x += 20;
+	sprintf(str, "%3d ", -6 * (int32_t)UISTAT->rfgain);
 	ili9341_drawfont_string(str, &NF20x24, x, y, 0x07ff, bg);
 	x += 60;
+	ili9341_drawfont_dma(13, &NF20x24, x, y, 0x07ff, bg);
+	x += 20;
 }
 
 
