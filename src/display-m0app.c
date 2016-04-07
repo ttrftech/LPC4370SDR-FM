@@ -689,6 +689,73 @@ draw_spectrogram()
 	}
 }
 
+#define RGB565(r,g,b)     ( (((r)<<8)&0xf800) | (((g)<<3)&0x07e0) | ((b)&0x001f) )
+
+const struct { uint8_t r,g,b; } colormap[] = {
+		{ 0, 0, 0 },
+		{ 0, 0, 255 },
+		{ 0, 255, 0 },
+		{ 255, 0, 0 },
+		{ 255, 255, 255 }
+};
+
+uint16_t
+pick_color(int mag) /* mag: 0 - 63 */
+{
+	int idx = (mag >> 4) & 0x3;
+	int prop = mag & 0x0f;
+	int nprop = 0x10 - prop;
+	int r = colormap[idx].r * nprop + colormap[idx+1].r * prop;
+	int g = colormap[idx].g * nprop + colormap[idx+1].g * prop;
+	int b = colormap[idx].b * nprop + colormap[idx+1].b * prop;
+	return RGB565(r>>4, g>>4, b>>4);
+}
+
+void
+waterfall_init(void)
+{
+	// Vertical Scroll Definition
+	uint16_t tfa = 152;
+	uint16_t vsa = 240 - tfa;
+	uint16_t bfa = 80;
+	uint8_t vsd[6] = { tfa>>8, tfa, vsa>>8, vsa, bfa>>8, bfa };
+	send_command(0x33, 6, vsd);
+}
+
+int vsa = 152;
+
+void
+draw_waterfall(void)
+{
+	int x;
+	q31_t *buf = SPDISPINFO->buffer;
+	uint16_t *block = spi_buffer;
+	int i = SPDISPINFO->p.offset;
+	int stride = SPDISPINFO->p.stride;
+	uint16_t gainshift = SPDISPINFO->p.overgain;
+
+	for (x = 0; x < 320; x++) {
+		q31_t ii = buf[(i&1023)*2];
+		q31_t qq = buf[(i&1023)*2+1];
+		q31_t mag = ((int64_t)ii*ii + (int64_t)qq*qq)>>(33-gainshift);
+		//q31_t mag = buf[i & 1023];
+		int v = log2_q31(mag) >> 6;
+		if (v > 63) v = 63;
+		*block++ = pick_color(v);
+		i += stride;
+	}
+
+	vsa++;
+	if (vsa >= 240)
+		vsa = 152;
+
+	// Vertical Scroll Address
+	uint8_t vscrsadd[2] = { vsa>>8, vsa };
+	send_command(0x37, 2, vscrsadd);
+
+	ili9341_draw_bitmap(0, vsa, 320, 1, spi_buffer);
+}
+
 void
 draw_tick(void)
 {
@@ -814,16 +881,14 @@ void M0_M4CORE_IRQHandler(void) {
 
 	if (SPDISPINFO->update_flag & FLAG_SPDISP) {
 		draw_spectrogram();
+		draw_waterfall();
 		SPDISPINFO->update_flag &= ~FLAG_SPDISP;
 	}
-	if (SPDISPINFO->update_flag & FLAG_TICK) {
+	if (SPDISPINFO->update_flag & FLAG_UI) {
 		draw_tick();
-		SPDISPINFO->update_flag &= ~FLAG_TICK;
-	}
-	if (SPDISPINFO->update_flag & FLAG_FREQ) {
 		draw_freq();
 		draw_info();
-		SPDISPINFO->update_flag &= ~FLAG_FREQ;
+		SPDISPINFO->update_flag &= ~FLAG_UI;
 	}
 }
 
@@ -859,6 +924,7 @@ int main(void) {
 
 	spi_init();
 	ili9341_init();
+	waterfall_init();
 	clear_background();
 
 	//spi_test();
