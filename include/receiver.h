@@ -27,7 +27,7 @@
 #define EXTCLK_10MHZ	0
 //#define I2S_SLAVE		1
 
-#define STEREO	0 //1
+#define STEREO	1
 
 #if EXTCLK_10MHZ
 #define AUDIO_RATE			48077
