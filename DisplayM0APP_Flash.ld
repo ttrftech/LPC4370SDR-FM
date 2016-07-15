@@ -8,9 +8,23 @@
  * By LPCXpresso v7.4.0 [Build 229] [2014-09-16]  on Fri Jul 15 09:19:43 JST 2016
  */
 
+GROUP(
+ libcr_semihost.a
+ libcr_c.a
+ libcr_eabihelpers.a
+)
 
-INCLUDE "DisplayM0APP_Debug_lib.ld"
-INCLUDE "DisplayM0APP_Debug_mem.ld"
+MEMORY
+{
+  /* Define each memory region */
+  FlashB (rx) : ORIGIN = 0x140F0000, LENGTH = 0x10000 /* 64K bytes at tail of flash */
+  RAMLoc128B (rwx) : ORIGIN = 0x10010000, LENGTH = 0x10000 /* 64K bytes */
+  RamLoc72 (rwx) : ORIGIN = 0x10080000, LENGTH = 0x12000 /* 72K bytes */
+}
+  /* Define a symbol for the top of each memory region */
+  __top_FlashB = 0x140F0000 + 0x10000;
+  __top_RAMLoc128B = 0x10010000 + 0x10000;
+  __top_RamLoc72 = 0x10080000 + 0x12000;
 
 ENTRY(ResetISR)
 
@@ -46,15 +60,14 @@ SECTIONS
 
         *(.after_vectors*)
         
-    } >RAMLoc128B
+    } >FlashB
     
     .text : ALIGN(4)    
     {
          *(.text*)
         *(.rodata .rodata.* .constdata .constdata.*)
-        . = ALIGN(4);
-        
-    } > RAMLoc128B
+        . = ALIGN(4);        
+    } >FlashB
 
     /*
      * for exception handling/unwind - some Newlib functions (in common
@@ -63,13 +76,13 @@ SECTIONS
     .ARM.extab : ALIGN(4)
     {
     	*(.ARM.extab* .gnu.linkonce.armextab.*)
-    } > RAMLoc128B
+    } > FlashB
     __exidx_start = .;
     
     .ARM.exidx : ALIGN(4)
     {
     	*(.ARM.exidx* .gnu.linkonce.armexidx.*)
-    } > RAMLoc128B
+    } > FlashB
     __exidx_end = .;
     
     _etext = .;
@@ -84,7 +97,7 @@ SECTIONS
     	*(.data.$RAM2*)
     	*(.data.$RamLoc72*)
        . = ALIGN(4) ;
-    } > RamLoc72 AT>RAMLoc128B
+    } > RamLoc72 AT>FlashB
     
     /* MAIN DATA SECTION */
     
@@ -107,7 +120,7 @@ SECTIONS
 	   *(.data*)
 	   . = ALIGN(4) ;
 	   _edata = . ;
-	} > RAMLoc128B AT>RAMLoc128B
+	} > RAMLoc128B AT>FlashB
 
     /* BSS section for RamLoc72 */
     .bss_RAM2 : ALIGN(4)
