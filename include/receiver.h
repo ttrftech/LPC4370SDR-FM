@@ -24,10 +24,10 @@
 #include <arm_math.h>
 #include <lpc43xx_gpio.h>
 
-#define EXTCLK_10MHZ	1
-#define I2S_SLAVE		1
+#define EXTCLK_10MHZ	0
+//#define I2S_SLAVE		1
 
-#define STEREO	1
+#define STEREO	0 //1
 
 #if EXTCLK_10MHZ
 #define AUDIO_RATE			48077
@@ -90,6 +90,59 @@
 #define AUDIO_BUFFER_SIZE	0x2000
 #define AUDIO_TEST_BUFFER 	((q15_t*)0x1008C000)
 
+typedef enum {
+	MOD_LSB,
+	MOD_USB,
+	MOD_MAX
+} modulation_t;
+
+typedef struct {
+	enum { CHANNEL, GAIN, MOD, AGCMODE, RFGAIN, SPDISP, TESTP, DEBUGMODE, FREQ, MODE_MAX } mode;
+	int gain;
+	int channel;
+	uint32_t freq;
+	modulation_t modulation;
+	int digit; /* 0~5 */
+	enum { AGC_MANUAL, AGC_SLOW, AGC_MID, AGC_FAST } agcmode;
+	int rfgain;
+	float32_t ncoampl;
+	enum { SPDISP_CAP, SPDISP_CIC, SPDISP_DEMOD, SPDISP_RESAMP, SPDISP_AUDIO, SPDISP_MODE_MAX } spdispmode;
+	int tp;
+	int debugmode;
+} uistat_t;
+
+#define UISTAT ((uistat_t*)0x10083f00)
+
+typedef struct {
+	uint32_t sample_freq;
+	int16_t offset;
+	int16_t stride;
+	int16_t overgain;
+
+	int16_t origin;
+	int16_t tickstep;
+	int16_t tickbase;
+	int16_t tickunit;
+	const char *unitname;
+} spectrumdisplay_param_t;
+
+// when event sent with SEV from M4 core, filled following data
+typedef struct {
+	q31_t *buffer;
+	uint32_t buffer_rest;
+	uint8_t update_flag;
+	uint8_t ui_update_flag;
+	spectrumdisplay_param_t p;
+} spectrumdisplay_info_t;
+
+#define FLAG_SPDISP 	(1<<0)
+#define FLAG_UI 		(1<<1)
+
+#define SPDISPINFO ((spectrumdisplay_info_t*)0x10083f80)
+
+// r:2048 c:1024 samples (8192 byte with q31_t)
+#define SPDISP_BUFFER_SIZE	8192
+#define SPDISP_BUFFER	 	((q31_t*)0x10084000)
 
 
 // dsp.c

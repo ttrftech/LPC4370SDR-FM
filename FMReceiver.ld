@@ -13,14 +13,17 @@ MEMORY
 {
   /* Define each memory region */
   Flash_1MB (rx) : ORIGIN = 0x14000000, LENGTH = 0x100000 /* 1M bytes */
-  RamLoc128 (rwx) : ORIGIN = 0x10000000, LENGTH = 0x20000 /* 128K bytes */
+  RamLoc128 (rwx) : ORIGIN = 0x10000000, LENGTH = 0x10000 /* 64K bytes */
+  RAMLoc128B (rwx) : ORIGIN = 0x10010000, LENGTH = 0x10000 /* 64K bytes */
   RamLoc72 (rwx) : ORIGIN = 0x10080000, LENGTH = 0x12000 /* 72K bytes */
+  
+  
 }
   /* Define a symbol for the top of each memory region */
   __top_Flash_1MB = 0x14000000 + 0x100000;
-  __top_RamLoc128 = 0x10000000 + 0x20000;
+  __top_RamLoc128 = 0x10000000 + 0x10000;
+  __top_RAMLoc128B = 0x10010000 + 0x10000;
   __top_RamLoc72 = 0x10080000 + 0x12000;
-
 
 /* from FMReceiver_Release_Flash2RAM.ld */
 
@@ -43,6 +46,9 @@ SECTIONS
         LONG(LOADADDR(.text_RAM));
         LONG(    ADDR(.text_RAM));
         LONG(  SIZEOF(.text_RAM));
+        LONG(LOADADDR(.text_RAM2));
+        LONG(    ADDR(.text_RAM2));
+        LONG(  SIZEOF(.text_RAM2));
         LONG(LOADADDR(.data));
         LONG(    ADDR(.data));
         LONG(  SIZEOF(.data));
@@ -70,6 +76,16 @@ SECTIONS
        *(.rodata .rodata.* .constdata .constdata.*)
         
     } > RamLoc128 AT>Flash_1MB
+
+    .text_RAM2 : ALIGN(4)    
+    {
+       FILL(0xff)
+       __core_m0app_START__ = .;
+         KEEP(*(.core_m0app))
+       __core_m0app_END__ = .;
+       ASSERT(!(__core_m0app_START__ == __core_m0app_END__), "No slave code for _core_m0app");
+       ASSERT( (ABSOLUTE(__core_m0app_START__) == __vectors_start___core_m0app), "M0APP execute address differs from address provided in source image");        
+    } > RAMLoc128B AT>Flash_1MB
 
     /*
      * for exception handling/unwind - some Newlib functions (in common

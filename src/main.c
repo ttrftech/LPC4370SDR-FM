@@ -50,13 +50,17 @@
 
 #include <cr_section_macros.h>
 
+#if defined (LPC43_MULTICORE_M0APP) | defined (LPC43_MULTICORE_M0SUB)
+#include "cr_start_m0.h"
+#endif
+
 #include <stdio.h>
 #include <arm_math.h>
 
 #include "receiver.h"
 #include "vadc.h"
 
-#if 0//EXTCLK_10MHZ
+#if EXTCLK_10MHZ
 // PLL0AUDIO: 40MHz = (40MHz / 25) * (500 * 2) / (10 * 2)
 #define PLL0_MSEL	500
 #define PLL0_NSEL	50
@@ -391,7 +395,7 @@ static void i2s_init(uint32_t rate)
 
 #ifndef I2S_SLAVE
     // Configure sampling frequency
-    //setup_i2s_clock(LPC_I2S0, rate, I2S_TX_MODE);
+    setup_i2s_clock(LPC_I2S0, rate, I2S_TX_MODE);
 #endif
 
     I2S_Stop(LPC_I2S0, I2S_TX_MODE);
@@ -411,6 +415,16 @@ int main(void) {
 #endif
     // Setup SysTick Timer to interrupt at 1 msec intervals
 	SysTick_Config(CGU_GetPCLKFrequency(CGU_PERIPHERAL_M4CORE) / 1000);
+
+    // Start M0APP slave processor
+#if defined (LPC43_MULTICORE_M0APP)
+    cr_start_m0(SLAVE_M0APP,&__core_m0app_START__);
+#endif
+
+    // Start M0SUB slave processor
+#if defined (LPC43_MULTICORE_M0SUB)
+    cr_start_m0(SLAVE_M0SUB,&__core_m0sub_START__);
+#endif
 
 	//cos_sin_test(AUDIO_TEST_BUFFER, AUDIO_BUFFER_SIZE / sizeof(uint32_t));
 
@@ -436,7 +450,7 @@ int main(void) {
 
     while(1) {
     	ui_process();
-
+    	__WFI();
     	//if ((capture_count % 1024) < 512) {
     	// 	GPIO_SetValue(0,1<<8);
     	//} else {

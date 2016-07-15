@@ -181,15 +181,6 @@ int btn_check()
 #define TP_MAX		16
 #define FREQ_STEP	100000
 
-static struct {
-	enum { GAIN, CHANNEL, FREQ, TESTP, DEBUGMODE, MODE_MAX } mode;
-	int gain;
-	int channel;
-	float32_t freq;
-	int tp;
-	int debugmode;
-} uistat;
-
 static float32_t channel_freqs[CHANNEL_MAX] = {
 		80.4e6f,
 		82.5e6f,
@@ -209,21 +200,21 @@ void
 ui_update()
 {
 	char buf[16];
-	switch (uistat.mode) {
+	switch (UISTAT->mode) {
 	case GAIN:
-		if (uistat.gain < -6)
+		if (UISTAT->gain < -6)
 			sprintf(buf, "Vol:mute");
 		else
-			sprintf(buf, "Vol:%ddB", uistat.gain);
+			sprintf(buf, "Vol:%ddB", UISTAT->gain);
 		break;
 	case FREQ:
-		sprintf(buf, "%2.1fMHz", uistat.freq / 1000000);
+		sprintf(buf, "%2.1fMHz", UISTAT->freq / 1000000);
 		break;
 	case CHANNEL:
-		sprintf(buf, "Ch%d %2.1f", uistat.channel, uistat.freq / 1000000);
+		sprintf(buf, "Ch%d %2.1f", UISTAT->channel, UISTAT->freq / 1000000);
 		break;
 	case TESTP:
-		switch (uistat.tp) {
+		switch (UISTAT->tp) {
 		case 0:
 			sprintf(buf, "CAP:%04x", *(uint16_t*)CAPTUREBUFFER0);
 			break;
@@ -285,7 +276,7 @@ ui_update()
 		}
 		break;
 	case DEBUGMODE:
-	    switch (uistat.debugmode) {
+	    switch (UISTAT->debugmode) {
 	    case 0:
 			sprintf(buf, "DMA:RUN");
 			break;
@@ -325,16 +316,21 @@ ui_init()
 	i2clcd_init();
 	i2clcd_str("HelloSDR");
 
-	uistat.mode = GAIN;
-	uistat.gain = 10;
-	uistat.channel = 1;
-	uistat.freq = 82500000;
-	uistat.tp = 0;
-	uistat.debugmode = 0;
+	UISTAT->mode = GAIN;
+	UISTAT->gain = 10;
+	UISTAT->channel = 1;
+	UISTAT->freq = 82500000;
+	UISTAT->modulation = MOD_LSB;
+	UISTAT->digit = 5;
+	UISTAT->agcmode = 0;
+	UISTAT->rfgain = 0;
+	UISTAT->spdispmode = SPDISP_CIC;
+	UISTAT->tp = 0;
+	UISTAT->debugmode = 0;
 	ui_update();
 
-	nco_set_frequency(uistat.freq);
-	audio_set_gain(uistat.gain);
+	nco_set_frequency(UISTAT->freq);
+	audio_set_gain(UISTAT->gain);
 }
 
 void
@@ -343,55 +339,64 @@ ui_process()
 	int status = btn_check();
 	if (status != 0) {
 		if (status & EVT_BUTTON_SINGLE_CLICK) {
-			uistat.mode = (uistat.mode + 1) % MODE_MAX;
-		} else if (uistat.mode == GAIN) {
-			if ((status & ENCODER_UP) && uistat.gain < AUDIO_GAIN_MAX)
-				uistat.gain++;
-			if ((status & ENCODER_DOWN) && uistat.gain > AUDIO_GAIN_MIN)
-				uistat.gain--;
-			audio_set_gain(uistat.gain);
-		} else if (uistat.mode == FREQ) {
+			UISTAT->mode = (UISTAT->mode + 1) % MODE_MAX;
+		} else if (UISTAT->mode == GAIN) {
+			if ((status & ENCODER_UP) && UISTAT->gain < AUDIO_GAIN_MAX)
+				UISTAT->gain++;
+			if ((status & ENCODER_DOWN) && UISTAT->gain > AUDIO_GAIN_MIN)
+				UISTAT->gain--;
+			audio_set_gain(UISTAT->gain);
+		} else if (UISTAT->mode == FREQ) {
 			if ((status & ENCODER_UP))
-				uistat.freq += FREQ_STEP;
+				UISTAT->freq += FREQ_STEP;
 			if ((status & ENCODER_DOWN))
-				uistat.freq -= FREQ_STEP;
-			nco_set_frequency(uistat.freq);
-		} else if (uistat.mode == CHANNEL) {
-			if ((status & ENCODER_UP) && uistat.channel < CHANNEL_MAX) {
-				uistat.channel++;
-				uistat.freq = channel_freqs[uistat.channel];
-				nco_set_frequency(uistat.freq);
+				UISTAT->freq -= FREQ_STEP;
+			nco_set_frequency(UISTAT->freq);
+		} else if (UISTAT->mode == CHANNEL) {
+			if ((status & ENCODER_UP) && UISTAT->channel < CHANNEL_MAX) {
+				UISTAT->channel++;
+				UISTAT->freq = channel_freqs[UISTAT->channel];
+				nco_set_frequency(UISTAT->freq);
 			}
-			if ((status & ENCODER_DOWN) && uistat.channel > 0) {
-				uistat.channel--;
-				uistat.freq = channel_freqs[uistat.channel];
-				nco_set_frequency(uistat.freq);
+			if ((status & ENCODER_DOWN) && UISTAT->channel > 0) {
+				UISTAT->channel--;
+				UISTAT->freq = channel_freqs[UISTAT->channel];
+				nco_set_frequency(UISTAT->freq);
 			}
-		} else if (uistat.mode == TESTP) {
+		} else if (UISTAT->mode == SPDISP) {
+			if ((status & ENCODER_UP) && UISTAT->spdispmode < SPDISP_MODE_MAX-1) {
+				UISTAT->spdispmode++;
+			}
+			if ((status & ENCODER_DOWN) && UISTAT->spdispmode > 0) {
+				UISTAT->spdispmode--;
+			}
+			SPDISPINFO->ui_update_flag = TRUE;
+		} else if (UISTAT->mode == TESTP) {
 			if (status & ENCODER_UP)
-				uistat.tp++;
+				UISTAT->tp++;
 			if (status & ENCODER_DOWN)
-				uistat.tp--;
-			uistat.tp &= TP_MAX-1; // assume 2^n
-		} else if (uistat.mode == DEBUGMODE) {
-			if ((status & ENCODER_UP) && uistat.debugmode < 2) {
-				uistat.debugmode++;
+				UISTAT->tp--;
+			UISTAT->tp &= TP_MAX-1; // assume 2^n
+		} else if (UISTAT->mode == DEBUGMODE) {
+			if ((status & ENCODER_UP) && UISTAT->debugmode < 2) {
+				UISTAT->debugmode++;
 				DMA_HALT();
-				if (uistat.debugmode == 2) {
+				if (UISTAT->debugmode == 2) {
 					generate_test_tone(1000.0f);
 				}
 			}
-			if ((status & ENCODER_DOWN) && uistat.debugmode > 0) {
-				uistat.debugmode--;
-				if (uistat.debugmode == 0)
+			if ((status & ENCODER_DOWN) && UISTAT->debugmode > 0) {
+				UISTAT->debugmode--;
+				if (UISTAT->debugmode == 0)
 					DMA_RUN();
 			}
 		}
+		SPDISPINFO->ui_update_flag = TRUE;
 		ui_update();
 	} else if (capture_count % 512 == 0) {
 		ui_update();
-		update_adc_dc_offset();
+		//update_adc_dc_offset();
 	}
 
-    systick_delay(1);
+    //systick_delay(1);
 }

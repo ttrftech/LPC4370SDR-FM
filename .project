@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <projectDescription>
-	<name>FMReceiver</name>
+	<name>FMReceiverMC</name>
 	<comment></comment>
 	<projects>
 		<project>CMSIS_LPC43xx_DriverLib</project>
+		<project>DisplayM0APP</project>
 	</projects>
 	<buildSpec>
 		<buildCommand>

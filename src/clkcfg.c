@@ -207,6 +207,7 @@ void setup_pll0audio(uint32_t msel, uint32_t nsel, uint32_t psel)
 
 void setup_i2s_clock(LPC_I2Sn_Type *I2Sx, uint32_t Freq, uint8_t TRMode)
 {
+#if 0
 	/* Calculate bit rate
 	 * The formula is:
 	 *      bit_rate = channel*wordwidth - 1
@@ -276,6 +277,13 @@ void setup_i2s_clock(LPC_I2Sn_Type *I2Sx, uint32_t Freq, uint8_t TRMode)
 	x_divide = ((uint64_t)y_divide * Freq *( bitrate+1)* N * 2)/i2sPclk;
 	if(x_divide >= 256) x_divide = 0xFF;
 	if(x_divide == 0) x_divide = 1;
+#else
+	// 12MHz * (64 / 125) / 2 / 1 / 64 = 48kHz
+	uint16_t x_divide = 64;
+	uint16_t y_divide = 125;
+	int32_t N = 2;
+	CGU_EntityConnect(CGU_CLKSRC_XTAL_OSC, CGU_BASE_APB1);
+#endif
 	if (TRMode == I2S_TX_MODE)// Transmitter
 	{
 		I2Sx->TXBITRATE = N - 1;
