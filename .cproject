@@ -59,8 +59,8 @@
 							<tool id="com.crt.advproject.link.exe.debug.836109915" name="MCU Linker" superClass="com.crt.advproject.link.exe.debug">
 								<option id="com.crt.advproject.link.arch.335539702" name="Architecture" superClass="com.crt.advproject.link.arch" value="com.crt.advproject.link.target.cm0" valueType="enumerated"/>
 								<option id="com.crt.advproject.link.thumb.378480354" name="Thumb mode" superClass="com.crt.advproject.link.thumb" value="true" valueType="boolean"/>
-								<option id="com.crt.advproject.link.script.1826115123" name="Linker script" superClass="com.crt.advproject.link.script" value="&quot;DisplayM0APP_Debug.ld&quot;" valueType="string"/>
-								<option id="com.crt.advproject.link.manage.654817015" name="Manage linker script" superClass="com.crt.advproject.link.manage" value="true" valueType="boolean"/>
+								<option id="com.crt.advproject.link.script.1826115123" name="Linker script" superClass="com.crt.advproject.link.script" value="&quot;DisplayM0APP_Flash.ld&quot;" valueType="string"/>
+								<option id="com.crt.advproject.link.manage.654817015" name="Manage linker script" superClass="com.crt.advproject.link.manage" value="false" valueType="boolean"/>
 								<option id="gnu.c.link.option.nostdlibs.2012915768" name="No startup or default libs (-nostdlib)" superClass="gnu.c.link.option.nostdlibs" value="true" valueType="boolean"/>
 								<option id="gnu.c.link.option.other.1622610851" name="Other options (-Xlinker [option])" superClass="gnu.c.link.option.other" valueType="stringList">
 									<listOptionValue builtIn="false" value="-Map=&quot;${BuildArtifactFileBaseName}.map&quot;"/>
@@ -81,6 +81,7 @@
 								<option id="com.crt.advproject.link.gcc.multicore.master.755463039" name="Multicore master" superClass="com.crt.advproject.link.gcc.multicore.master"/>
 								<option id="com.crt.advproject.link.gcc.multicore.master.userobjs.224626042" name="Slave Objects (not visible)" superClass="com.crt.advproject.link.gcc.multicore.master.userobjs" valueType="userObjs"/>
 								<option id="com.crt.advproject.link.toram.586829861" name="Link application to RAM" superClass="com.crt.advproject.link.toram" value="false" valueType="boolean"/>
+								<option id="com.crt.advproject.link.scriptdir.821912520" name="Script path" superClass="com.crt.advproject.link.scriptdir" value=".." valueType="string"/>
 								<inputType id="cdt.managedbuild.tool.gnu.c.linker.input.668970573" superClass="cdt.managedbuild.tool.gnu.c.linker.input">
 									<additionalInput kind="additionalinputdependency" paths="$(USER_OBJS)"/>
 									<additionalInput kind="additionalinput" paths="$(LIBS)"/>
