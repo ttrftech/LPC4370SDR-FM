@@ -295,10 +295,12 @@ uint16_t spi_buffer[2048];
 void
 spi_dma_setup()
 {
+	NVIC_DisableIRQ(DMA_IRQn);
 	GPDMA_Init();
 	LPC_GPDMA->CONFIG |= 0x01 << 1;  /* Enable DMA channels, little endian */
 	while ( !(LPC_GPDMA->CONFIG & (0x01 << 1)) );
-	//NVIC_EnableIRQ(DMA_IRQn);
+    NVIC_SetPriority(DMA_IRQn, 1);
+	NVIC_EnableIRQ(DMA_IRQn);
 }
 
 void
@@ -324,7 +326,7 @@ spi_dma_transfer(void *data, int length, int noincrement)
 	//LPC_CREG->DMAMUX &= ~3<<(GPDMA_SSP1_TX_CHANNEL*2);
 	//LPC_CREG->DMAMUX |= 0<<(GPDMA_SSP1_TX_CHANNEL*2);
 	LPC_GPDMA->C1SRCADDR = (uint32_t)data;
-	LPC_GPDMA->C1DESTADDR = (uint32_t)&LPC_SSP1->DR;
+	LPC_GPDMA->C1DESTADDR = (uint32_t)&LPC_SSP1->DR; // write into SSP1
 	LPC_GPDMA->C1LLI = 0;
 	LPC_GPDMA->C1CONTROL = (length >> 1) |         // Transfersize (does not matter when flow control is handled by peripheral)
 						   (0x2 << 12)  |          // Source Burst Size
@@ -335,7 +337,7 @@ spi_dma_transfer(void *data, int length, int noincrement)
                            (0x1 << 25)  |          // Dest AHB master 0 / 1
             (noincrement?0:(0x1 << 26)) |	 	   // Source increment(LAST Sample)
                            (0x0 << 27)  |          // Destination increment
-                           (0x1UL << 31);          // Terminal count interrupt disabled
+                           (0x1UL << 31);          // Terminal count interrupt enabled
 	LPC_GPDMA->C1CONFIG  =  (0x1)       |          // Enable bit
 						  (0x0 << 1)    |  	       // SRCPERIPHERAL - memory
 		 (GPDMA_SSP1_TX_CHANNEL << 6)  |           // Destination peripheral - memory - no setting
@@ -349,11 +351,17 @@ spi_dma_transfer(void *data, int length, int noincrement)
 	LPC_GPDMA->SOFTBREQ = 1<<GPDMA_SSP1_TX_CHANNEL;
 }
 
+void M0_DMA_IRQHandler(void)
+{
+	//if (LPC_GPDMA->INTTCSTAT & GPDMA_DMACIntTCStat_Ch(1))
+	//	LPC_GPDMA->INTTCCLEAR = GPDMA_DMACIntTCClear_Ch(1);
+}
+
 void
 spi_dma_sync()
 {
 	while (!(LPC_GPDMA->INTTCSTAT & GPDMA_DMACIntTCStat_Ch(1)))
-		;
+		; //__WFI();
 	LPC_GPDMA->INTTCCLEAR = GPDMA_DMACIntTCClear_Ch(1);
 	//while (LPC_SSP1->SR & SSP_SR_BSY)
 	//	;
