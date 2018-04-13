@@ -97,7 +97,7 @@ typedef enum {
 } modulation_t;
 
 typedef struct {
-	enum { CHANNEL, GAIN, MOD, AGCMODE, RFGAIN, SPDISP, TESTP, DEBUGMODE, FREQ, MODE_MAX } mode;
+	enum { FREQ, GAIN, MOD, AGCMODE, RFGAIN, SPDISP, TESTP, DEBUGMODE, CHANNEL, MODE_MAX } mode;
 	int gain;
 	int channel;
 	uint32_t freq;

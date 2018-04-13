@@ -316,7 +316,7 @@ ui_init()
 	i2clcd_init();
 	i2clcd_str("HelloSDR");
 
-	UISTAT->mode = GAIN;
+	UISTAT->mode = CHANNEL;
 	UISTAT->gain = 10;
 	UISTAT->channel = 1;
 	UISTAT->freq = 82500000;
@@ -324,7 +324,7 @@ ui_init()
 	UISTAT->digit = 5;
 	UISTAT->agcmode = 0;
 	UISTAT->rfgain = 0;
-	UISTAT->spdispmode = SPDISP_CIC;
+	UISTAT->spdispmode = SPDISP_RESAMP;
 	UISTAT->tp = 0;
 	UISTAT->debugmode = 0;
 	ui_update();

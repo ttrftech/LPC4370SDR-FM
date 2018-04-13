@@ -85,7 +85,7 @@ SECTIONS
        ASSERT( (ABSOLUTE(__core_m0app_START__) == __vectors_start___core_m0app), "M0APP execute address differs from address provided in source image");        
     } >FlashB
 
-	// next section should be named .data_M0APP, but error occurs
+	/* next section should be named .data_M0APP, but error occurs */
     .text_RAM2 : ALIGN(4)    
     {
        FILL(0xff)
