@@ -3,6 +3,7 @@
 	<name>DisplayM0APP</name>
 	<comment></comment>
 	<projects>
+		<project>CMSIS_DSPLIB_CM0</project>
 		<project>CMSIS_LPC43xx_DriverLib-M0</project>
 	</projects>
 	<buildSpec>
